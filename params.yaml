@@ -17,6 +17,10 @@ data:
   # Local scratch dir on the Colab VM. Data is copied here from Drive before
   # training so the loop reads fast local SSD, not the slow Drive mount.
   local_cache: /content/bluespotter_cache
+  # --- Manifest mode (links, no storage duplication) ---
+  use_manifest: true                       # train from train.csv/test.csv (Drive IDs)
+  train_manifest: data/training_data/train.csv
+  test_manifest: data/test_data/test.csv
   image_filter: _img     # substring identifying image files
   mask_filter: _masks    # substring identifying mask files
   test_split: 0.15       # fraction held out for validation (if no test dir)

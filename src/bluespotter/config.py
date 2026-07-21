@@ -49,6 +49,18 @@ class Config:
     def local_cache(self) -> Path:
         return Path(self.raw["data"]["local_cache"])
 
+    @property
+    def use_manifest(self) -> bool:
+        return bool(self.raw["data"].get("use_manifest", False))
+
+    @property
+    def train_manifest(self) -> Path:
+        return self.drive_root / self.raw["data"]["train_manifest"]
+
+    @property
+    def test_manifest(self) -> Path:
+        return self.drive_root / self.raw["data"]["test_manifest"]
+
     # --- Convenience accessors ---
     @property
     def data(self) -> dict[str, Any]:

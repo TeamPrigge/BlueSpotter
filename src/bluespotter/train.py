@@ -65,18 +65,28 @@ def run(cfg: Config | None = None) -> Path:
         print(f"  Could not query torch/GPU: {e}")
 
     # ---- STEP 2: data -------------------------------------------------------
-    _banner("2/5", "Data: cache from Drive -> local disk, then load image/mask pairs")
-    print(f"  Drive data dir : {cfg.data_dir}")
-    print(f"  Local cache    : {cfg.local_cache}")
-    local = cache_from_drive(cfg.data_dir, cfg.local_cache)
-    images, labels, test_images, test_labels = load_dataset(
-        local,
-        image_filter=cfg.data["image_filter"],
-        mask_filter=cfg.data["mask_filter"],
-    )
-    if not test_images:
-        print(f"  No separate test folder -> splitting off {cfg.data['test_split']:.0%} for validation")
-        images, labels, test_images, test_labels = _split(images, labels, cfg.data["test_split"])
+    if cfg.use_manifest:
+        _banner("2/5", "Data: load image/mask pairs from manifest (train.csv / test.csv)")
+        from .manifest import get_drive_service, load_manifest
+        print("  Authorising Drive access (a one-time popup may appear)...")
+        svc = get_drive_service()
+        print(f"  Train manifest : {cfg.train_manifest}")
+        print(f"  Test  manifest : {cfg.test_manifest}")
+        images, labels = load_manifest(cfg.train_manifest, cfg.local_cache / "train", svc)
+        test_images, test_labels = load_manifest(cfg.test_manifest, cfg.local_cache / "test", svc)
+    else:
+        _banner("2/5", "Data: cache from Drive folder -> local disk, then load pairs")
+        print(f"  Drive data dir : {cfg.data_dir}")
+        print(f"  Local cache    : {cfg.local_cache}")
+        local = cache_from_drive(cfg.data_dir, cfg.local_cache)
+        images, labels, test_images, test_labels = load_dataset(
+            local,
+            image_filter=cfg.data["image_filter"],
+            mask_filter=cfg.data["mask_filter"],
+        )
+        if not test_images:
+            print(f"  No separate test folder -> splitting off {cfg.data['test_split']:.0%} for validation")
+            images, labels, test_images, test_labels = _split(images, labels, cfg.data["test_split"])
     print(f"  Training images : {len(images)}")
     print(f"  Validation images: {len(test_images)}")
     if len(images) == 0:
