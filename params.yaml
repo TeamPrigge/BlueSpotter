@@ -21,6 +21,7 @@ data:
   use_manifest: true                       # train from train.csv/test.csv (Drive IDs)
   train_manifest: data/training_data/train.csv
   test_manifest: data/test_data/test.csv
+  nmslices_root: /content/drive/MyDrive/TeamPrigge/Data/NM_Slices   # mounted source images
   image_filter: _img     # substring identifying image files
   mask_filter: _masks    # substring identifying mask files
   test_split: 0.15       # fraction held out for validation (if no test dir)

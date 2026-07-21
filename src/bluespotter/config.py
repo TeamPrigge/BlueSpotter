@@ -61,6 +61,10 @@ class Config:
     def test_manifest(self) -> Path:
         return self.drive_root / self.raw["data"]["test_manifest"]
 
+    @property
+    def nmslices_root(self) -> Path:
+        return Path(self.raw["data"]["nmslices_root"])
+
     # --- Convenience accessors ---
     @property
     def data(self) -> dict[str, Any]:

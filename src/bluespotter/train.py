@@ -67,13 +67,12 @@ def run(cfg: Config | None = None) -> Path:
     # ---- STEP 2: data -------------------------------------------------------
     if cfg.use_manifest:
         _banner("2/5", "Data: load image/mask pairs from manifest (train.csv / test.csv)")
-        from .manifest import get_drive_service, load_manifest
-        print("  Authorising Drive access (a one-time popup may appear)...")
-        svc = get_drive_service()
+        from .manifest import load_manifest
         print(f"  Train manifest : {cfg.train_manifest}")
         print(f"  Test  manifest : {cfg.test_manifest}")
-        images, labels = load_manifest(cfg.train_manifest, cfg.local_cache / "train", svc)
-        test_images, test_labels = load_manifest(cfg.test_manifest, cfg.local_cache / "test", svc)
+        print(f"  Image source   : {cfg.nmslices_root}")
+        images, labels = load_manifest(cfg.train_manifest, cfg.nmslices_root)
+        test_images, test_labels = load_manifest(cfg.test_manifest, cfg.nmslices_root)
     else:
         _banner("2/5", "Data: cache from Drive folder -> local disk, then load pairs")
         print(f"  Drive data dir : {cfg.data_dir}")
