@@ -5,7 +5,7 @@
 cellpose>=4.0            # Cellpose-SAM
 mlflow>=2.14
 pyyaml>=6.0
-numpy>=1.26
+numpy>=1.26,<2.1            # numba/cellpose need numpy<2.1 (Colab ships 2.x)
 tifffile>=2024.1        # read/write TIFF image + mask stacks
 scikit-image>=0.22      # morphology / feature extraction (downstream)
 matplotlib>=3.8         # quick visual QC
