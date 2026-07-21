@@ -8,7 +8,7 @@ drive:
   #   /content/drive/MyDrive/SoftwareTools/BlueSpotter
   # If it lives in a Shared drive named TeamPrigge:
   #   /content/drive/Shareddrives/TeamPrigge/SoftwareTools/BlueSpotter
-  root: /content/drive/MyDrive/SoftwareTools/BlueSpotter
+  root: /content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter
   data_subdir: data      # -> {root}/data   (paired _img/_masks files)
   model_subdir: model    # -> {root}/model  (trained weights written here)
   mlruns_subdir: mlruns  # -> {root}/mlruns (MLflow logs, survives Colab)
