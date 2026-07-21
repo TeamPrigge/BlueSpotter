@@ -4,8 +4,14 @@ Run end-to-end from the Colab notebook or the CLI:
 
     python -m bluespotter.train
 
-It reads params.yaml, caches data from Drive, fine-tunes Cellpose-SAM, logs the
-run to MLflow, and copies the trained weights back to Drive.
+The run() function is written as a sequence of clearly labelled steps so it is
+easy to follow what is happening at each stage:
+
+    1. Environment check   - GPU available? which cellpose/torch versions?
+    2. Data                - copy from Drive to fast local disk, then load pairs
+    3. Model               - load the pretrained Cellpose-SAM (cpsam) weights
+    4. Train               - fine-tune, logging params + per-epoch losses to MLflow
+    5. Save                - copy the trained model back to Drive + log as artifact
 """
 from __future__ import annotations
 
@@ -22,8 +28,15 @@ from .data import cache_from_drive, load_dataset
 from .mlflow_utils import log_params_from_config, start_tracking
 
 
+def _banner(step: str, text: str) -> None:
+    """Print a clear section header so the notebook output is easy to read."""
+    print("\n" + "=" * 70)
+    print(f"[{step}] {text}")
+    print("=" * 70)
+
+
 def _split(images, labels, test_split: float):
-    """Simple deterministic train/val split when no test dir is provided."""
+    """Deterministic train/val split used when no separate test folder exists."""
     n = len(images)
     k = max(1, int(round(n * test_split)))
     rng = np.random.default_rng(0)
@@ -39,9 +52,22 @@ def _split(images, labels, test_split: float):
 def run(cfg: Config | None = None) -> Path:
     cfg = cfg or load_config()
     io.logger_setup()
-    start_tracking(cfg)
 
-    # 1. Data: Drive -> local scratch -> loaded arrays
+    # ---- STEP 1: environment ------------------------------------------------
+    _banner("1/5", "Environment check")
+    try:
+        import torch
+        gpu = torch.cuda.is_available()
+        print(f"  GPU available : {gpu}"
+              + (f"  ({torch.cuda.get_device_name(0)})" if gpu else "  <-- switch Colab to a GPU runtime!"))
+    except Exception as e:  # noqa: BLE001
+        gpu = False
+        print(f"  Could not query torch/GPU: {e}")
+
+    # ---- STEP 2: data -------------------------------------------------------
+    _banner("2/5", "Data: cache from Drive -> local disk, then load image/mask pairs")
+    print(f"  Drive data dir : {cfg.data_dir}")
+    print(f"  Local cache    : {cfg.local_cache}")
     local = cache_from_drive(cfg.data_dir, cfg.local_cache)
     images, labels, test_images, test_labels = load_dataset(
         local,
@@ -49,20 +75,31 @@ def run(cfg: Config | None = None) -> Path:
         mask_filter=cfg.data["mask_filter"],
     )
     if not test_images:
-        images, labels, test_images, test_labels = _split(
-            images, labels, cfg.data["test_split"]
-        )
+        print(f"  No separate test folder -> splitting off {cfg.data['test_split']:.0%} for validation")
+        images, labels, test_images, test_labels = _split(images, labels, cfg.data["test_split"])
+    print(f"  Training images : {len(images)}")
+    print(f"  Validation images: {len(test_images)}")
+    if len(images) == 0:
+        raise RuntimeError("No training images found. Check params.yaml paths and the *_img/_masks filters.")
 
-    # 2. Model: start from pretrained Cellpose-SAM weights
-    model = models.CellposeModel(gpu=True, pretrained_model=cfg.model["pretrained"])
+    # ---- STEP 3: MLflow + model --------------------------------------------
+    _banner("3/5", "MLflow tracking + load pretrained Cellpose-SAM")
+    start_tracking(cfg)
+    print(f"  Loading pretrained model: {cfg.model['pretrained']}  (Cellpose-SAM)")
+    model = models.CellposeModel(gpu=gpu, pretrained_model=cfg.model["pretrained"])
 
     run_name = f"{cfg.model['name']}_{_dt.datetime.now():%Y%m%d_%H%M%S}"
     with mlflow.start_run(run_name=run_name):
         log_params_from_config(cfg)
         mlflow.log_param("n_train", len(images))
         mlflow.log_param("n_test", len(test_images))
+        mlflow.log_param("gpu", gpu)
 
-        # 3. Fine-tune
+        # ---- STEP 4: fine-tune ---------------------------------------------
+        _banner("4/5", f"Fine-tuning  (run: {run_name})")
+        print(f"  epochs={cfg.train['n_epochs']}  lr={cfg.train['learning_rate']}  "
+              f"weight_decay={cfg.train['weight_decay']}  batch_size={cfg.train['batch_size']}")
+        print("  ...training (this can take a while; watch the loss go down)...")
         model_path, train_losses, test_losses = train.train_seg(
             model.net,
             train_data=images,
@@ -78,22 +115,26 @@ def run(cfg: Config | None = None) -> Path:
             model_name=run_name,
         )
 
-        # 4. Log metrics per epoch
+        # log per-epoch losses so you get curves in the MLflow UI
         for epoch, tl in enumerate(np.atleast_1d(train_losses)):
             mlflow.log_metric("train_loss", float(tl), step=epoch)
         for epoch, vl in enumerate(np.atleast_1d(test_losses)):
             if vl is not None and not np.isnan(vl):
                 mlflow.log_metric("test_loss", float(vl), step=epoch)
+        final_train = float(np.atleast_1d(train_losses)[-1])
+        print(f"  Final train loss: {final_train:.4f}")
 
-        # 5. Persist model: to Drive (source of truth) + MLflow artifact
+        # ---- STEP 5: save --------------------------------------------------
+        _banner("5/5", "Save model to Drive + log as MLflow artifact")
         cfg.model_dir.mkdir(parents=True, exist_ok=True)
         drive_model = cfg.model_dir / Path(model_path).name
         shutil.copy2(model_path, drive_model)
         mlflow.log_artifact(str(model_path), artifact_path="model")
         mlflow.log_param("model_drive_path", str(drive_model))
+        print(f"  Model saved to Drive: {drive_model}")
 
-        print(f"\nTrained model saved to Drive: {drive_model}")
-        return drive_model
+    print("\nDONE. Trained model path returned to caller.\n")
+    return drive_model
 
 
 if __name__ == "__main__":

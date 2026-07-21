@@ -2,10 +2,11 @@
 
 Phase 0 logs into a Drive-synced `mlruns/` folder so runs survive Colab session
 resets. Set the MLFLOW_TRACKING_URI env var to point at a hosted tracking server
-later — no code change required.
+later (e.g. DagsHub) - no code change required.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import mlflow
@@ -17,14 +18,18 @@ def start_tracking(cfg: Config) -> str:
     """Configure MLflow tracking + experiment. Returns the resolved tracking URI."""
     uri = cfg.tracking_uri()
 
-    # If logging to the local/Drive file store, make sure the folder exists.
+    # MLflow 3.x disabled the local/Drive file store ("file://.../mlruns") by
+    # default and raises unless you opt in. We *intentionally* use a Drive file
+    # store in phase 0 so runs persist across Colab resets, so opt back in here.
+    # (When you move MLFLOW_TRACKING_URI to a real server this branch is skipped.)
     if uri.startswith("file://"):
+        os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
         Path(uri.replace("file://", "")).mkdir(parents=True, exist_ok=True)
 
     mlflow.set_tracking_uri(uri)
     mlflow.set_experiment(cfg.mlflow["experiment_name"])
-    print(f"MLflow tracking URI: {uri}")
-    print(f"MLflow experiment:   {cfg.mlflow['experiment_name']}")
+    print(f"  MLflow tracking URI : {uri}")
+    print(f"  MLflow experiment   : {cfg.mlflow['experiment_name']}")
     return uri
 
 
