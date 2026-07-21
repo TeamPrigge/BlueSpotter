@@ -38,6 +38,7 @@ train:
   weight_decay: 0.1
   batch_size: 1
   nchan: 3
+  min_train_masks: 1        # keep crops with >=1 labelled neuron (Cellpose default is 5)
 
 mlflow:
   experiment_name: bluespotter-lc-segmentation

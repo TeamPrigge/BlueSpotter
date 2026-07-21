@@ -119,7 +119,7 @@ def run(cfg: Config | None = None) -> Path:
             learning_rate=cfg.train["learning_rate"],
             weight_decay=cfg.train["weight_decay"],
             batch_size=cfg.train["batch_size"],
-            nchan=cfg.train["nchan"],
+            min_train_masks=cfg.train.get("min_train_masks", 1),
             save_path=str(cfg.local_cache),
             model_name=run_name,
         )
