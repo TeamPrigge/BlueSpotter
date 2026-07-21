@@ -1,0 +1,15 @@
+# Keeps notebooks clean in git: strips cell outputs + execution counts so
+# diffs stay readable and no data/images get committed inside a notebook.
+# Enable once with:  pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]   # block accidental large binaries

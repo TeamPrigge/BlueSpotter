@@ -1,0 +1,36 @@
+# --- Data & models never go in git (they live in Google Drive) ---
+data/*
+!data/.gitkeep
+*.tif
+*.tiff
+*.czi
+*.nd2
+*.lif
+*.ome.tif
+*.npy
+*.pth
+*.pt
+
+# --- MLflow local logs ---
+mlruns/
+mlartifacts/
+
+# --- Secrets ---
+.env
+*.token
+credentials.json
+service_account*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/

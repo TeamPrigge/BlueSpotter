@@ -1,0 +1,42 @@
+# BlueSpotter configuration
+# Everything the pipeline needs lives here so runs are reproducible and
+# comparable. Edit paths/hyperparameters here rather than in code.
+
+drive:
+  # Root of the BlueSpotter folder as seen inside Colab after mounting Drive.
+  # If BlueSpotter sits in your personal My Drive:
+  #   /content/drive/MyDrive/SoftwareTools/BlueSpotter
+  # If it lives in a Shared drive named TeamPrigge:
+  #   /content/drive/Shareddrives/TeamPrigge/SoftwareTools/BlueSpotter
+  root: /content/drive/MyDrive/SoftwareTools/BlueSpotter
+  data_subdir: data      # -> {root}/data   (paired _img/_masks files)
+  model_subdir: model    # -> {root}/model  (trained weights written here)
+  mlruns_subdir: mlruns  # -> {root}/mlruns (MLflow logs, survives Colab)
+
+data:
+  # Local scratch dir on the Colab VM. Data is copied here from Drive before
+  # training so the loop reads fast local SSD, not the slow Drive mount.
+  local_cache: /content/bluespotter_cache
+  image_filter: _img     # substring identifying image files
+  mask_filter: _masks    # substring identifying mask files
+  test_split: 0.15       # fraction held out for validation (if no test dir)
+
+model:
+  # Fine-tune from the pretrained Cellpose-SAM weights.
+  pretrained: cpsam
+  name: bluespotter_lc   # base name for the saved model
+
+train:
+  # Cellpose-SAM fine-tuning defaults (per Cellpose docs).
+  n_epochs: 100
+  learning_rate: 0.00001
+  weight_decay: 0.1
+  batch_size: 1
+  nchan: 3
+
+mlflow:
+  experiment_name: bluespotter-lc-segmentation
+  # Leave tracking_uri empty to log into the Drive-synced mlruns folder above.
+  # To use a hosted server later, set the MLFLOW_TRACKING_URI env var instead —
+  # it takes precedence over this file. No code change needed.
+  tracking_uri: ""
