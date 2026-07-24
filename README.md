@@ -38,11 +38,20 @@ BlueSpotter/
 │   ├── data.py                       # Drive→local caching, dataset loading
 │   ├── mlflow_utils.py               # MLflow tracking setup
 │   └── train.py                      # Cellpose-SAM transfer learning
+├── deploy/                          # model hosting: HF Hub upload + Gradio Space demo
+│   ├── hub/                          #   push weights + model card to the Hub
+│   └── space/                        #   runnable Gradio demo Space
 ├── params.yaml                       # all paths + hyperparameters
 ├── requirements.txt
 ├── .pre-commit-config.yaml           # nbstripout (keeps notebooks clean in git)
 └── docs/SETUP.md
 ```
+
+## Hosting the trained model
+
+Once a model is trained, `deploy/` publishes it so it can be used interactively:
+push the weights + a model card to the Hugging Face Hub, then run a Gradio Space
+demo that segments an uploaded LC slice. See [deploy/README.md](deploy/README.md).
 
 ## Data convention
 

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bluespotter — automatic LC segmentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f5f2ea; --ink:#16213a; --blue:#0a5cff; --link:#1d3a8f;
+    --orange:#c9631f; --sel:#e2762c; --card:#fffdf8; --line:rgba(22,33,58,0.12);
+    --muted:rgba(22,33,58,0.62);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--link);text-decoration:none}
+  a:hover{color:var(--orange)}
+  ::selection{background:var(--sel);color:#fff}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;letter-spacing:-0.02em;line-height:1.1}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 clamp(20px,5vw,64px)}
+  .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--blue)}
+
+  /* nav */
+  nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:14px clamp(20px,5vw,64px);background:rgba(245,242,234,0.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{position:relative;width:34px;height:34px;border-radius:9px;background:var(--ink);flex:none}
+  .logo>span{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--blue);top:7px;right:6px}
+  .brand b{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px}
+  .navlinks{display:flex;flex-wrap:wrap;align-items:center;gap:clamp(14px,2.5vw,32px)}
+  .navlinks a{font-size:14.5px;font-weight:500;color:var(--muted)}
+  .navlinks a:hover{color:var(--orange)}
+
+  /* hero */
+  .hero{display:grid;grid-template-columns:1.05fr 0.95fr;gap:clamp(28px,4vw,56px);align-items:center;padding:clamp(48px,7vw,88px) 0 clamp(36px,5vw,64px)}
+  .hero h1{font-size:clamp(30px,4.4vw,50px);font-weight:700}
+  .hero p.lead{margin-top:18px;font-size:clamp(15.5px,1.7vw,18px);color:var(--muted);max-width:52ch}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:15px;padding:11px 20px;border-radius:10px;border:none;cursor:pointer;transition:transform .06s ease,opacity .15s ease}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--ink);color:#fff}
+  .btn-primary:disabled{opacity:0.45;cursor:not-allowed}
+  .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .hero .cta{margin-top:26px;display:flex;gap:12px;flex-wrap:wrap}
+
+  /* demo card */
+  .demo{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 14px 40px -24px rgba(22,33,58,0.5)}
+  .tabs{display:flex;gap:6px;background:rgba(22,33,58,0.06);padding:4px;border-radius:10px;margin-bottom:14px}
+  .tab{flex:1;text-align:center;font-size:13.5px;font-weight:600;padding:8px;border-radius:7px;cursor:pointer;color:var(--muted)}
+  .tab.active{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(22,33,58,0.15)}
+  .drop{border:1.5px dashed rgba(22,33,58,0.28);border-radius:12px;padding:26px 18px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  .drop:hover,.drop.drag{border-color:var(--blue);background:rgba(10,92,255,0.04)}
+  .drop .big{font-weight:600;font-size:15px}
+  .drop .sub{font-size:13px;color:var(--muted);margin-top:4px}
+  .filerow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;font-size:13.5px;background:rgba(22,33,58,0.04);border-radius:9px;padding:9px 12px}
+  .filerow .name{font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .count{color:var(--blue);font-weight:600;white-space:nowrap}
+  textarea{width:100%;margin-top:12px;font-family:inherit;font-size:14px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical;min-height:64px}
+  textarea::placeholder{color:rgba(22,33,58,0.4)}
+  .consent{display:flex;gap:9px;align-items:flex-start;margin-top:12px;font-size:12.8px;color:var(--muted)}
+  .consent input{margin-top:2px}
+  .result{margin-top:14px;display:none}
+  .result img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+  .result .bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+  .status{font-size:13px;color:var(--muted);margin-top:10px;min-height:18px}
+  .status.err{color:#b3261e}
+
+  /* generic sections */
+  section{padding:clamp(44px,6vw,72px) 0;border-top:1px solid var(--line)}
+  section h2{font-size:clamp(24px,3.2vw,34px);font-weight:700;margin-top:10px}
+  section .intro{color:var(--muted);margin-top:12px;max-width:62ch;font-size:16px}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:34px}
+  .step .num{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--blue);font-size:13px}
+  .step h3{font-size:17px;margin-top:8px}
+  .step p{color:var(--muted);font-size:14px;margin-top:6px}
+  .pipeline{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:30px;font-family:'IBM Plex Mono',monospace;font-size:13.5px}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 12px}
+  .arrow{color:var(--muted)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:30px;align-items:start}
+  .frame{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .frame .label{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)}
+  .ph{margin-top:10px;aspect-ratio:4/3;border-radius:10px;background:
+      radial-gradient(circle at 30% 40%, rgba(10,92,255,0.20), transparent 40%),
+      radial-gradient(circle at 65% 60%, rgba(201,99,31,0.18), transparent 42%),
+      #0f1830;display:flex;align-items:flex-end;padding:10px}
+  .ph.seg{outline:2px dashed rgba(255,80,80,0.7);outline-offset:-10px}
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:13px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600}
+  .feat{display:flex;gap:10px;margin-top:12px;font-size:15px}
+  .feat .dash{color:var(--blue)}
+  .faq details{border-bottom:1px solid var(--line);padding:14px 0}
+  .faq summary{cursor:pointer;font-weight:600;font-size:16px;list-style:none;display:flex;justify-content:space-between}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:'+';color:var(--blue);font-family:'IBM Plex Mono',monospace}
+  .faq details[open] summary::after{content:'–'}
+  .faq p{color:var(--muted);margin-top:10px;font-size:15px}
+  footer{border-top:1px solid var(--line);padding:34px 0;color:var(--muted);font-size:13.5px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
+  .grid-2{display:grid;grid-template-columns:1.1fr 0.9fr;gap:30px;align-items:center}
+  @media(max-width:820px){
+    .hero,.two,.grid-2{grid-template-columns:1fr}
+    .steps{grid-template-columns:1fr 1fr}
+  }
+  @media(max-width:520px){.steps{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand"><div class="logo"><span></span></div><b>Bluespotter</b>
+    <span style="font-size:12.5px;color:var(--muted)">@ sponsored by <a href="https://www.priggelab.com">priggelab.com</a></span>
+  </div>
+  <div class="navlinks">
+    <a href="#how">How it works</a>
+    <a href="#method">Method</a>
+    <a href="#community">Community</a>
+    <a href="#faq">FAQ</a>
+    <a href="https://github.com/TeamPrigge/BlueSpotter">GitHub</a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <!-- HERO + DEMO -->
+  <div class="hero">
+    <div>
+      <h1>Segment the LC automatically. Make counts reproducible across every lab.</h1>
+      <p class="lead">Upload microscopy images of the locus coeruleus and let a Cellpose-SAM model — fine-tuned on LC histology — find, segment, and count noradrenergic neurons in minutes. Review the overlay, then export a CSV of measurements.</p>
+      <div class="cta">
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+        <a class="btn btn-ghost" href="#method">Method</a>
+      </div>
+    </div>
+
+    <div class="demo" id="demo">
+      <div class="tabs">
+        <div class="tab active" id="tab-single">Single image</div>
+        <div class="tab" id="tab-batch">Batch mode</div>
+      </div>
+
+      <div id="single">
+        <div class="drop" id="drop">
+          <div class="big">Drop an image here or click to browse</div>
+          <div class="sub">TIFF · PNG · JPEG · ND2 · CZI</div>
+        </div>
+        <input type="file" id="file" accept=".tif,.tiff,.png,.jpg,.jpeg,.nd2,.czi,image/*" hidden>
+
+        <div class="filerow" id="filerow" style="display:none">
+          <span class="name" id="fname">—</span>
+          <span class="count" id="fcount"></span>
+        </div>
+
+        <textarea id="note" placeholder="Tell the segmentation agent about this image (staining, magnification, region…) — optional"></textarea>
+
+        <label class="consent">
+          <input type="checkbox" id="consent">
+          <span>I agree this image may be processed to generate results. <a href="#privacy">What we do with your data</a></span>
+        </label>
+
+        <button class="btn btn-primary" id="go" style="margin-top:14px;width:100%" disabled>Segment this image</button>
+        <div class="status" id="status"></div>
+
+        <div class="result" id="result">
+          <img id="overlay" alt="Segmentation overlay">
+          <div class="bar">
+            <span class="count" id="rcount"></span>
+            <a class="btn btn-ghost" id="csv" style="padding:7px 14px;font-size:13.5px" download="results.csv">results.csv ↓</a>
+          </div>
+        </div>
+      </div>
+
+      <div id="batch" style="display:none">
+        <div class="drop" style="cursor:default">
+          <div class="big">Batch mode</div>
+          <div class="sub">Upload a folder of slices and download <span class="mono">results.zip</span>. Available once the API is deployed — it runs single images through the same endpoint in sequence.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WORKFLOW -->
+<section id="how"><div class="wrap">
+  <span class="eyebrow">Workflow</span>
+  <h2>From upload to cell counts in four steps</h2>
+  <p class="intro">No manual annotation, no local install — the whole pipeline runs from your browser.</p>
+  <div class="steps">
+    <div class="step"><div class="num">01</div><h3>Upload your images</h3><p>TH-stained sections in TIFF, PNG, ND2, CZI, and other common microscopy formats — single files or a full batch.</p></div>
+    <div class="step"><div class="num">02</div><h3>Describe the acquisition</h3><p>Optionally tell the agent about staining and imaging conditions; a Cellpose-SAM checkpoint fine-tuned on LC histology detects and masks each neuron.</p></div>
+    <div class="step"><div class="num">03</div><h3>Review the masks</h3><p>Inspect the predicted masks over your original image and adjust the confidence threshold if needed.</p></div>
+    <div class="step"><div class="num">04</div><h3>Download your results</h3><p>Get a CSV of per-cell measurements plus the segmentation overlay image.</p></div>
+  </div>
+</div></section>
+
+<!-- SAMPLE OUTPUT -->
+<section id="sample"><div class="wrap">
+  <span class="eyebrow">Sample output</span>
+  <h2>See it on real data</h2>
+  <p class="intro">Every detected neuron becomes one row in your CSV — with the mask overlaid on your original image.</p>
+  <div class="two">
+    <div class="frame"><span class="label">Raw image</span><div class="ph"></div></div>
+    <div class="frame"><span class="label">Segmented overlay</span><div class="ph seg"></div></div>
+  </div>
+  <div class="frame" style="margin-top:22px">
+    <span class="label">results.csv — example output</span>
+    <table>
+      <thead><tr><th>cell_id</th><th>area_px</th><th>centroid_x</th><th>centroid_y</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>842</td><td>213.4</td><td>88.1</td></tr>
+        <tr><td>2</td><td>913</td><td>240.9</td><td>101.7</td></tr>
+        <tr><td>3</td><td>767</td><td>268.2</td><td>95.3</td></tr>
+        <tr><td>4</td><td>1024</td><td>295.6</td><td>112.4</td></tr>
+        <tr><td>5</td><td>689</td><td>321.8</td><td>126.0</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div></section>
+
+<!-- METHOD -->
+<section id="method"><div class="wrap">
+  <span class="eyebrow">Method</span>
+  <div class="grid-2">
+    <div>
+      <h2>A segmentation model built for one nucleus</h2>
+      <p class="intro">Bluespotter starts from Cellpose-SAM and fine-tunes it on more than 1,000 manually labelled LC segmentations, so it recognizes the shape, staining, and density of noradrenergic neurons specifically — not a general-purpose cell model asked to guess. Full methods and validation are described in our <a href="#preprint">bioRxiv preprint</a>.</p>
+      <div class="feat"><span class="dash">—</span><span>Fine-tuned specifically for LC neurons across staining protocols</span></div>
+      <div class="feat"><span class="dash">—</span><span>Reviewed against expert manual annotations before release</span></div>
+      <div class="feat"><span class="dash">—</span><span>Outputs both a visual mask overlay and structured per-cell measurements</span></div>
+    </div>
+    <div class="pipeline" style="flex-direction:column;align-items:stretch">
+      <div class="chip">Image</div><div class="arrow">↓</div>
+      <div class="chip" style="border-color:var(--blue)">Cellpose-SAM-Bluespotter</div><div class="arrow">↓</div>
+      <div class="chip">Segmentation mask</div><div class="arrow">↓</div>
+      <div class="chip">CSV + overlay</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- COMMUNITY -->
+<section id="community"><div class="wrap">
+  <span class="eyebrow">Community</span>
+  <h2>Built with contributing labs</h2>
+  <p class="intro">The segmentation model keeps improving because researchers share annotated LC images for training. Contributing labs get early access to model updates and are credited here as the community grows.</p>
+  <a class="btn btn-primary" href="mailto:info@priggelab.com?subject=Bluespotter%20training%20images" style="margin-top:20px">Contribute training images</a>
+</div></section>
+
+<!-- FAQ -->
+<section id="faq"><div class="wrap">
+  <span class="eyebrow">FAQ</span>
+  <h2>Questions, answered</h2>
+  <div class="faq" style="margin-top:20px">
+    <details><summary>Which image formats are supported?</summary><p>Bluespotter accepts TIFF, PNG, JPEG, ND2, and CZI files — most formats exported directly from confocal, widefield, and slide-scanning microscopes.</p></details>
+    <details><summary>How accurate is the segmentation?</summary><p>The model is validated against expert manual annotations before release; accuracy figures and comparisons are reported in the preprint. Always visually review the overlay before quantifying.</p></details>
+    <details><summary>Can I use this for other brainstem nuclei?</summary><p>It is fine-tuned specifically for the locus coeruleus. Other nuclei may work but are out of the validated scope — treat results as exploratory.</p></details>
+    <details><summary>Is my image data kept private?</summary><p>Images are processed only to generate your results and are not shared. See the privacy note for details.</p></details>
+    <details><summary>Do I need a GPU, and can I batch process images?</summary><p>No local GPU is needed — inference runs on the hosted service (CPU by default, with an optional GPU tier for speed). Batch mode processes multiple images through the same endpoint.</p></details>
+  </div>
+</div></section>
+
+<footer><div class="wrap" style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;width:100%">
+  <span><b style="font-family:'Space Grotesk'">Bluespotter</b> — a research tool, not intended for clinical diagnostic use.</span>
+  <span><a href="#privacy">Privacy</a> · <a href="#terms">Terms</a> · <a href="mailto:info@priggelab.com">Contact</a></span>
+</div></footer>
+
+<script>
+/* ================================================================
+   BlueSpotter demo wiring
+   Set API_BASE to your deployed Cloud Run URL, e.g.
+     const API_BASE = "https://bluespotter-xxxxx.europe-west1.run.app";
+   Leave it "" to call a same-origin /segment (used by the local mock
+   server for testing). The API's CORS must allow this page's origin.
+   ================================================================ */
+const API_BASE = "";
+
+const $ = (id) => document.getElementById(id);
+let currentFile = null;
+
+// tabs
+$("tab-single").onclick = () => switchTab(true);
+$("tab-batch").onclick  = () => switchTab(false);
+function switchTab(single){
+  $("tab-single").classList.toggle("active", single);
+  $("tab-batch").classList.toggle("active", !single);
+  $("single").style.display = single ? "block" : "none";
+  $("batch").style.display  = single ? "none"  : "block";
+}
+
+// file selection (click + drag/drop)
+const drop = $("drop"), fileInput = $("file");
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => setFile(fileInput.files[0]);
+["dragover","dragenter"].forEach(e => drop.addEventListener(e, ev => {ev.preventDefault(); drop.classList.add("drag");}));
+["dragleave","drop"].forEach(e => drop.addEventListener(e, ev => {ev.preventDefault(); drop.classList.remove("drag");}));
+drop.addEventListener("drop", ev => { if (ev.dataTransfer.files.length) setFile(ev.dataTransfer.files[0]); });
+
+function setFile(f){
+  if (!f) return;
+  currentFile = f;
+  $("fname").textContent = f.name;
+  $("fcount").textContent = (f.size/1024|0) + " KB";
+  $("filerow").style.display = "flex";
+  $("result").style.display = "none";
+  updateButton();
+}
+
+$("consent").onchange = updateButton;
+function updateButton(){ $("go").disabled = !(currentFile && $("consent").checked); }
+
+$("go").onclick = () => runSegment(currentFile);
+
+// exposed for testing + reuse
+window.runSegment = async function(file){
+  if (!file) return;
+  const status = $("status");
+  status.className = "status";
+  status.textContent = "Segmenting… the first request can take ~30–60 s if the service was idle (cold start).";
+  $("go").disabled = true;
+  $("result").style.display = "none";
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const note = $("note").value.trim();
+    if (note) fd.append("note", note);
+    const res = await fetch(API_BASE + "/segment", { method:"POST", body: fd });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    renderResult(data);
+    status.textContent = data.model ? ("Model: " + data.model) : "";
+  } catch (err) {
+    status.className = "status err";
+    status.textContent = "Error: " + err.message + ". Check that API_BASE points at your running service and that CORS allows this origin.";
+  } finally {
+    updateButton();
+  }
+};
+
+function renderResult(data){
+  $("overlay").src = "data:image/png;base64," + data.overlay_png_b64;
+  $("rcount").textContent = data.n_neurons + " neurons detected";
+  $("fcount").textContent = data.n_neurons + " neurons";
+  // build results.csv from per-cell measurements
+  const rows = data.cells || [];
+  const header = "cell_id,area_px,centroid_x,centroid_y\n";
+  const body = rows.map(r => [r.cell_id, r.area_px, r.centroid_x, r.centroid_y].join(",")).join("\n");
+  const blob = new Blob([header + body], { type:"text/csv" });
+  $("csv").href = URL.createObjectURL(blob);
+  $("result").style.display = "block";
+}
+</script>
+</body>
+</html>

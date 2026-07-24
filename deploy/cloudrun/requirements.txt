@@ -1,0 +1,16 @@
+# BlueSpotter Cloud Run inference API.
+# NOTE on torch: `cellpose` pulls in a CUDA-enabled torch by default. That build
+# ALSO runs on CPU, which is what makes the CPU->L4 switch a pure deploy-flag
+# change (no rebuild). It does make the image large (~several GB) and CPU cold
+# starts slow. To trade the easy GPU flip for a small/fast CPU-only image, see
+# the "CPU-only slim image" note in deploy.md.
+
+cellpose>=4.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9   # required by FastAPI for multipart file uploads
+huggingface_hub>=0.23
+numpy>=1.26,<2.1
+scikit-image>=0.22
+tifffile>=2024.1
+matplotlib>=3.8

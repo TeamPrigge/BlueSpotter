@@ -1,0 +1,11 @@
+# BlueSpotter HF Space demo dependencies.
+# On a CPU Space, cellpose pulls in a CPU build of torch automatically (large but works).
+# For a GPU Space, select a GPU hardware tier in Space settings — no code change needed.
+
+cellpose>=4.0            # Cellpose-SAM
+gradio>=4.0
+huggingface_hub>=0.23
+numpy>=1.26,<2.1
+scikit-image>=0.22       # imread (handles TIFF microscopy slices)
+tifffile>=2024.1
+matplotlib>=3.8
