@@ -1,0 +1,111 @@
+schema: '2.0'
+stages:
+  sync-manifests:
+    cmd: PYTHONPATH=src python -m bluespotter.manifest_sync
+    deps:
+    - path: src/bluespotter/manifest_sync.py
+      hash: md5
+      md5: c56f30f3698d3675407caaedd40c3db8
+      size: 3204
+    params:
+      params.yaml:
+        drive.root: /content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter
+        dvc.manifest_dir: data/manifests
+    outs:
+    - path: data/manifests/test.csv
+      hash: md5
+      md5: 7d4322efc8e85bc9c76376f19aff9097
+      size: 3416
+    - path: data/manifests/train.csv
+      hash: md5
+      md5: f55ac55abd8040927d952164711375b0
+      size: 13159
+    - path: reports/manifest_source.json
+      hash: md5
+      md5: ba03ad39c5223c28d123583224cac6d2
+      size: 710
+  validate:
+    cmd: PYTHONPATH=src python -m bluespotter.validate
+    deps:
+    - path: data/manifests/test.csv
+      hash: md5
+      md5: 7d4322efc8e85bc9c76376f19aff9097
+      size: 3416
+    - path: data/manifests/train.csv
+      hash: md5
+      md5: f55ac55abd8040927d952164711375b0
+      size: 13159
+    - path: src/bluespotter/validate.py
+      hash: md5
+      md5: 652791b0bdfdce10e22657e7ba634a72
+      size: 9330
+    params:
+      params.yaml:
+        dvc.fail_on_group_leak: false
+    outs:
+    - path: reports/validation.json
+      hash: md5
+      md5: 827e41d5e4fe3b5b8315d823ad44960c
+      size: 225
+    - path: reports/validation_detail.json
+      hash: md5
+      md5: c1d8efe97a4b2ddd4e0bc48d104b4186
+      size: 2664
+  index-train:
+    cmd: PYTHONPATH=src python -m bluespotter.drive_index --split train
+    deps:
+    - path: data/manifests/train.csv
+      hash: md5
+      md5: f55ac55abd8040927d952164711375b0
+      size: 13159
+    - path: src/bluespotter/drive_index.py
+      hash: md5
+      md5: c0507ef9e53dd3affebd6c93745e7f72
+      size: 11646
+    - path: src/bluespotter/manifest.py
+      hash: md5
+      md5: 22669e4bb39def8051a05184cd2df3ba
+      size: 3647
+    params:
+      params.yaml:
+        data.nmslices_root: /content/drive/MyDrive/TeamPrigge/Data/NM_Slices
+        dvc.fail_on_missing: true
+        dvc.hash_mode: partial
+    outs:
+    - path: data/index/train_index.csv
+      hash: md5
+      md5: a314fcd0882e6148e61d5fe5e5adba9a
+      size: 31397
+    - path: reports/train_index_summary.json
+      hash: md5
+      md5: 9005932450c3cc8db9cb3470be9afdb7
+      size: 271
+  index-test:
+    cmd: PYTHONPATH=src python -m bluespotter.drive_index --split test
+    deps:
+    - path: data/manifests/test.csv
+      hash: md5
+      md5: 7d4322efc8e85bc9c76376f19aff9097
+      size: 3416
+    - path: src/bluespotter/drive_index.py
+      hash: md5
+      md5: c0507ef9e53dd3affebd6c93745e7f72
+      size: 11646
+    - path: src/bluespotter/manifest.py
+      hash: md5
+      md5: 22669e4bb39def8051a05184cd2df3ba
+      size: 3647
+    params:
+      params.yaml:
+        data.nmslices_root: /content/drive/MyDrive/TeamPrigge/Data/NM_Slices
+        dvc.fail_on_missing: true
+        dvc.hash_mode: partial
+    outs:
+    - path: data/index/test_index.csv
+      hash: md5
+      md5: 97e06d4e09276ddcf925e0751112aa71
+      size: 7210
+    - path: reports/test_index_summary.json
+      hash: md5
+      md5: 61752268cd002d30a0dd227c2913fa4d
+      size: 267

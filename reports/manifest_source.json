@@ -1,0 +1,21 @@
+{
+  "drive_root": "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter",
+  "train": {
+    "source": "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/training_data/train.csv",
+    "dest": "/content/BlueSpotter/data/manifests/train.csv",
+    "md5": "f55ac55abd8040927d952164711375b0",
+    "previous_md5": null,
+    "status": "created",
+    "rows": 60,
+    "bytes": 13159
+  },
+  "test": {
+    "source": "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/test_data/test.csv",
+    "dest": "/content/BlueSpotter/data/manifests/test.csv",
+    "md5": "7d4322efc8e85bc9c76376f19aff9097",
+    "previous_md5": null,
+    "status": "created",
+    "rows": 15,
+    "bytes": 3416
+  }
+}

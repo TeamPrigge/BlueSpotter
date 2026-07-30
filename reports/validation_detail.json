@@ -1,0 +1,121 @@
+{
+  "errors": [],
+  "warnings": [
+    "8/9 test mice also appear in train (DHC-0464, DHC-0703, DHC-0893, DHC-0929, DHC-0932, DHC-0934, DHC-0935, DHC-0936). Test scores will be optimistic: the model has seen other sections from these animals. Consider a grouped (leave-mice-out) split.",
+    "9 physical slice(s) are split across train and test (DHC-0464|, DHC-0703|, DHC-0893|slice1, DHC-0893|slice2, DHC-0932|slice1, DHC-0934|slice3, DHC-0935|slice4, DHC-0936|slice2, DHC-0936|slice4) \u2014 typically left/right hemisphere of the same section. This is the strongest form of the leak above."
+  ],
+  "leakage": {
+    "image_id_overlap": [],
+    "mouse_overlap": [
+      "DHC-0464",
+      "DHC-0703",
+      "DHC-0893",
+      "DHC-0929",
+      "DHC-0932",
+      "DHC-0934",
+      "DHC-0935",
+      "DHC-0936"
+    ],
+    "slice_overlap": [
+      "DHC-0464|",
+      "DHC-0703|",
+      "DHC-0893|slice1",
+      "DHC-0893|slice2",
+      "DHC-0932|slice1",
+      "DHC-0934|slice3",
+      "DHC-0935|slice4",
+      "DHC-0936|slice2",
+      "DHC-0936|slice4"
+    ]
+  },
+  "composition": {
+    "train": {
+      "n_rows": 60,
+      "n_mice": 11,
+      "by_source": {
+        "NM_hightiter_histology_ED": 46,
+        "NM_lowtiter_histology": 14
+      },
+      "by_microscope": {
+        "Olympus (vsi->seg.npy)": 14,
+        "Zeiss (czi->tif)": 46
+      },
+      "by_channel": {
+        "TH": 60
+      },
+      "by_mask_type": {
+        "cp_masks_png": 46,
+        "seg_npy (image+mask in one file)": 14
+      }
+    },
+    "test": {
+      "n_rows": 15,
+      "n_mice": 9,
+      "by_source": {
+        "NM_hightiter_histology_ED": 9,
+        "NM_lowtiter_histology": 6
+      },
+      "by_microscope": {
+        "Olympus (vsi->seg.npy)": 6,
+        "Zeiss (czi->tif)": 9
+      },
+      "by_channel": {
+        "TH": 15
+      },
+      "by_mask_type": {
+        "cp_masks_png": 9,
+        "seg_npy (image+mask in one file)": 6
+      }
+    }
+  },
+  "rows_per_mouse": {
+    "DHC-0453": {
+      "train": 4,
+      "test": 0
+    },
+    "DHC-0464": {
+      "train": 8,
+      "test": 2
+    },
+    "DHC-0691": {
+      "train": 0,
+      "test": 2
+    },
+    "DHC-0703": {
+      "train": 2,
+      "test": 2
+    },
+    "DHC-0892": {
+      "train": 7,
+      "test": 0
+    },
+    "DHC-0893": {
+      "train": 4,
+      "test": 2
+    },
+    "DHC-0929": {
+      "train": 6,
+      "test": 2
+    },
+    "DHC-0930": {
+      "train": 6,
+      "test": 0
+    },
+    "DHC-0932": {
+      "train": 7,
+      "test": 1
+    },
+    "DHC-0934": {
+      "train": 7,
+      "test": 1
+    },
+    "DHC-0935": {
+      "train": 5,
+      "test": 1
+    },
+    "DHC-0936": {
+      "train": 4,
+      "test": 2
+    }
+  }
+}

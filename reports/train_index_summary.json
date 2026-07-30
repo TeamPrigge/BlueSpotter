@@ -1,0 +1,12 @@
+{
+  "manifest": "train.csv",
+  "rows": 60,
+  "files_indexed": 106,
+  "files_present": 106,
+  "files_missing": 0,
+  "total_bytes": 4775810013,
+  "total_gib": 4.448,
+  "hash_mode": "partial",
+  "dataset_hash": "3cbff8f986d0efba9e6a3946d0b90826",
+  "missing_examples": []
+}

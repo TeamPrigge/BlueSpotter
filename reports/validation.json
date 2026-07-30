@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "n_errors": 0,
+  "n_warnings": 2,
+  "n_train": 60,
+  "n_test": 15,
+  "test_fraction": 0.2,
+  "n_train_mice": 11,
+  "n_test_mice": 9,
+  "image_id_overlap": 0,
+  "n_mouse_overlap": 8,
+  "n_slice_overlap": 9
+}
