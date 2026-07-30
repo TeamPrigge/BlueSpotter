@@ -25,18 +25,27 @@ it used. See [docs/SETUP.md](docs/SETUP.md) for the workflow and
 
 ## Quick start (Colab)
 
-1. Open `notebooks/01_train_cellpose_sam.ipynb` in Google Colab (Pro, GPU runtime).
-2. Run the setup cell — it mounts Drive, installs deps, and clones this repo.
-3. Point `params.yaml` at your Drive folders (already defaulted to the paths above).
-4. Run the training cell. Cellpose-SAM fine-tunes on your labeled data, MLflow
-   logs the run, and the best model is written back to Drive.
+Everything runs in Colab. Nothing needs to run on a local machine.
+
+1. **`notebooks/00_data_versioning.ipynb`** (CPU runtime). Snapshots the manifests
+   from Drive, validates the splits, content-indexes the referenced images, pushes
+   the blobs to Drive and commits `dvc.lock` + `reports/` to GitHub. Run this first,
+   and again whenever the data changes.
+2. **`notebooks/01_train_cellpose_sam.ipynb`** (GPU runtime). Confirms the data
+   version is current, then fine-tunes Cellpose-SAM. MLflow logs the run with the
+   dataset hash and git commit that produced it, registers the weights in the Model
+   Registry, and writes the model back to Drive.
+
+Both clone this repo using the `TOKEN_BlueSpotter` Colab Secret, so they can push
+as well as pull. `params.yaml` already points at the Drive paths above.
 
 ## Repository layout
 
 ```
 BlueSpotter/
 ├── notebooks/
-│   └── 01_train_cellpose_sam.ipynb   # Colab training entry point
+│   ├── 00_data_versioning.ipynb      # DVC pipeline + publish to Drive/GitHub (CPU)
+│   └── 01_train_cellpose_sam.ipynb   # Colab training entry point (GPU)
 ├── src/bluespotter/
 │   ├── config.py                     # loads params.yaml, resolves Drive paths
 │   ├── data.py                       # Drive→local caching, dataset loading
@@ -63,13 +72,10 @@ BlueSpotter/
 
 ## Data versioning
 
-The images stay in Drive; DVC versions what points at them.
-
-```bash
-dvc repro validate index-train index-test   # data checks, no GPU needed
-dvc push                                    # blobs -> Drive dvcstore
-dvc metrics diff main                        # what changed on this branch
-```
+The images stay in Drive; DVC versions what points at them. Run
+`notebooks/00_data_versioning.ipynb` in Colab (CPU runtime is enough) — it runs the
+stages, pushes the blobs to the Drive `dvcstore`, and commits `dvc.lock` plus the
+reports to GitHub. Like everything else here, it needs no local terminal.
 
 `validate` currently reports a **train/test group-leakage warning**: the same
 animal (and one left/right hemisphere pair from a single section) appears in both
@@ -79,15 +85,14 @@ splits, which makes held-out scores optimistic. Details and the reasoning are in
 ## Experiment tracking
 
 Run metadata lives in a SQLite database whose home is Drive but which SQLite only
-ever opens on local disk — the Drive FUSE mount does not provide the file locking
-SQLite needs, and pointing it there corrupts the database. `train.run()` restores
-it at the start, checkpoints it to Drive on a timer, and publishes it at the end.
+ever opens on the Colab VM's local disk — the Drive FUSE mount does not provide the
+file locking SQLite needs, and pointing it there corrupts the database.
+`train.run()` restores it at the start, checkpoints it to Drive on a timer, and
+publishes it at the end, so this is handled for you inside the training notebook.
 
-```bash
-python -m bluespotter.mlflow_store status       # where things are, and are they intact
-python -m bluespotter.mlflow_store migrate      # one-time: import legacy mlruns/
-python -m bluespotter.mlflow_store checkpoint   # publish the DB to Drive
-```
+The `bluespotter.mlflow_store` CLI (`status`, `restore`, `checkpoint`, `migrate`)
+is wired into notebook cells; `00_data_versioning.ipynb` has the one-time
+migration of the legacy `mlruns/` history.
 
 A database backend is also what makes the **Model Registry** work at all; it is
 unavailable on the legacy file store. Each run registers its weights as

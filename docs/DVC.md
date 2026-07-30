@@ -69,10 +69,22 @@ any moment without anything in git changing, so those stages must re-check every
 run. Downstream stages still only re-run when the resulting index actually
 differs — so a no-op re-check is cheap.
 
-## Everyday commands
+## How you actually run this
+
+**In Colab, via `notebooks/00_data_versioning.ipynb`.** BlueSpotter is a cloud-only
+workflow — code in GitHub, data in Drive, execution in Colab — and data versioning
+is no exception. That notebook needs only a CPU runtime, and it does the whole
+loop: run the stages, show the reports, `dvc push` the blobs to Drive, then commit
+`dvc.lock` and `reports/` and push them to GitHub using the `TOKEN_BlueSpotter`
+Colab Secret. No local clone, no local terminal.
+
+`notebooks/01_train_cellpose_sam.ipynb` then only *checks* that the index is
+current before training, so a stale dataset version cannot quietly end up baked
+into a model.
+
+The underlying commands, for reference — the notebook runs these for you:
 
 ```bash
-# In Colab, after mounting Drive and cd-ing into the repo:
 dvc repro validate index-train index-test   # data checks only, no GPU needed
 dvc repro                                   # everything, including training
 dvc push                                    # send blobs to the Drive dvcstore
@@ -80,13 +92,13 @@ dvc pull                                    # restore manifests/indexes on a fre
 
 dvc status                                  # what is stale?
 dvc metrics show                            # current numbers
-dvc metrics diff main                        # what changed vs main
+dvc metrics diff main                       # what changed vs main
 dvc plots show                              # loss curves
 ```
 
-Then commit the metafiles — `dvc.lock`, `dvc.yaml`, `reports/*.json` — and push to
-GitHub. `core.autostage = true` means DVC stages them for you; you still need to
-commit.
+The metafiles that get committed are `dvc.lock`, `dvc.yaml` and `reports/*.json`.
+`core.autostage = true` means DVC stages them for you; the notebook does the
+commit and push.
 
 ## What lands in git, and what does not
 
