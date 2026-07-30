@@ -176,10 +176,18 @@ try, what happened?".
 
 ## 8. Known scientific issue — train/test group leakage
 
-`validate` reports this as a **warning**, deliberately. The same animals appear in
-both `train.csv` and `test.csv` (e.g. DHC-0929, 0932, 0934, 0935, 0936, 0893, 0464,
-0703), and at least one physical section is split by hemisphere — `DHC-0935 slice4`
-left in train, right in test.
+`validate` reports this as a **warning**, deliberately. These are the **measured**
+numbers from the first real pipeline run (`reports/validation.json`, commit
+`d91ed5d`), not an estimate:
+
+- **8 of 9 test mice also appear in train**: DHC-0464, 0703, 0893, 0929, 0932, 0934,
+  0935, 0936. Only one test animal is genuinely unseen.
+- **9 physical sections are split across the two splits** by hemisphere: DHC-0464,
+  DHC-0703, DHC-0893 slice1 + slice2, DHC-0932 slice1, DHC-0934 slice3,
+  DHC-0935 slice4, DHC-0936 slice2 + slice4.
+- 0 identical images in both splits, so there is no outright duplication — the
+  problem is entirely group leakage.
+- 60 train rows / 11 mice, 15 test rows / 9 mice (test fraction 0.20).
 
 Why it matters: two sections from one animal share its biology, staining batch and
 imaging session, so a model that has seen one has partly memorised the other.
@@ -189,55 +197,71 @@ unit of splitting is the **mouse**.
 
 It is a warning not an error because re-splitting is the user's scientific decision.
 Once a grouped (leave-mice-out) split exists, set `dvc.fail_on_group_leak: true` in
-`params.yaml` and CI will hold the line. Exact counts appear in
-`reports/validation.json` after running the pipeline in Colab with Drive mounted.
+`params.yaml` and CI will hold the line.
 
-**This has not been fixed. It is arguably the highest-value open item.**
+**This has not been fixed. It is the highest-value open item** — with 8 of 9 test
+animals seen during training, the current held-out score would say almost nothing
+about generalisation to a new mouse, which is the claim the platform exists to make.
 
 ## 9. Current state (end of the handoff session)
 
-Branch **`feat/dvc-data-versioning`**, 5 commits ahead of `main`:
+Branch **`feat/dvc-data-versioning`**:
 
 ```
-e541b19  Make the package installable so notebook shell cells work   <-- NOT PUSHED
+5ac9a86  Add CLAUDE.md handoff                                       (this file)
+7ddfe99  Make the package installable so notebook shell cells work
+d91ed5d  dvc: refresh dataset index and validation report   <-- pushed BY COLAB
 3e896a0  Make the Colab config check survive an older clone
 dc55514  Add Colab data-versioning notebook so nothing runs locally
 141920b  Move MLflow to a SQLite backend store homed on Drive; add Model Registry
 3db5ff1  Add DVC data versioning over Google Drive + MLflow provenance
 ```
 
-- `origin/feat/dvc-data-versioning` is at `d91ed5d` (= `3e896a0`). **`e541b19` is
-  unpushed** and it is the commit that fixes the `ModuleNotFoundError`.
 - `main` is still at `57a9b69` — it contains **none** of this work. Both notebooks
   therefore set `BRANCH = 'feat/dvc-data-versioning'`; switch to `'main'` after merge.
 - 52 tests pass, `ruff` clean. Tests use a synthetic Drive tree — no Drive or network
   needed, so they run anywhere.
 
-**Verified working** (against a synthetic Drive tree and real MLflow 3.14, in a
-sandbox — *not* yet against the real Drive):
-DVC DAG + `repro` + `push`/`pull` round-trip; silent-Drive-edit detection invalidating
-the train stage; missing-file detection; leakage detection; MLflow restore/checkpoint/
-integrity/rotation/WAL/concurrent-write-backup; model registration with provenance
-tags; recovery of runs+registry after deleting the local disk; legacy `mlruns/`
-migration recovering 3 runs; CI scripts in both bootstrap and locked states.
+### The data pipeline HAS now run for real
 
-**Never executed against the real Drive or a GPU.** Nobody has yet run
-`00_data_versioning.ipynb` end to end, so there is no real `dvc.lock`, no real
-`reports/*.json`, and the legacy `mlruns/` history is not yet migrated.
+`00_data_versioning.ipynb` ran end to end in Colab and pushed `d91ed5d` itself, which
+proves the whole cloud-only loop (Drive → index → commit → GitHub) works. Real
+results, from `reports/`:
+
+| | train | test |
+|---|---|---|
+| manifest rows | 60 | 15 |
+| files indexed | 106 | 24 |
+| files missing | **0** | **0** |
+| size | 4.45 GiB | 0.76 GiB |
+| `dataset_hash` | `3cbff8f986d0efba` | `566dcb00498fbf3e` |
+
+Every one of the 130 Drive files a manifest references resolved — the path logic in
+`manifest.resolve_row()` is correct against the real NM_Slices tree. `hash_mode` was
+`partial`.
+
+**Still not done:** the legacy `mlruns/` migration (notebook 00 section 6) and any
+GPU training run, so the MLflow SQLite store, Model Registry and provenance tagging
+have been verified against real MLflow 3.14 in a sandbox but never in Colab. Nothing
+has been trained since these changes.
+
+**Verified in a sandbox** (synthetic Drive tree + real MLflow 3.14): DVC DAG +
+`repro` + `push`/`pull` round-trip; silent-Drive-edit detection invalidating the train
+stage; missing-file detection; leakage detection; MLflow restore/checkpoint/integrity/
+rotation/WAL/concurrent-write-backup; model registration with provenance tags;
+recovery of runs+registry after deleting the local disk; legacy `mlruns/` migration
+recovering 3 runs; CI scripts in both bootstrap and locked states.
 
 ## 10. Do this next, in order
 
-1. **Push `e541b19`** (see §11 for the token).
-2. **Run `notebooks/00_data_versioning.ipynb`** in Colab, CPU runtime, with
-   `BRANCH = 'feat/dvc-data-versioning'`. Expect the first `dvc.lock`, real
-   `reports/*.json`, and the actual leakage numbers. First run is slow (hashes all
-   Drive files); later runs only re-hash changes.
-3. **Run its section 6 once** to migrate the legacy `mlruns/` history — *before* any
-   new training run, for the reason in §7.1.
-4. **Run `notebooks/01_train_cellpose_sam.ipynb`** on GPU. Confirm the run appears in
-   MLflow with `dataset_hash_train` and a registered `models:/bluespotter-lc/1`.
-5. **Open a PR** and merge to `main`, then flip `BRANCH` to `'main'` in both notebooks.
-6. Then consider, roughly in value order:
+1. **Run notebook 00 section 6 once** to migrate the legacy `mlruns/` history —
+   *before* any new training run, for the reason in §7.1.
+2. **Run `notebooks/01_train_cellpose_sam.ipynb`** on GPU. Confirm the run appears in
+   MLflow with `dataset_hash_train = 3cbff8f986d0efba...` and a registered
+   `models:/bluespotter-lc/1`. This is the first exercise of the SQLite store and
+   Model Registry outside a sandbox — expect to debug something.
+3. **Open a PR** and merge to `main`, then flip `BRANCH` to `'main'` in both notebooks.
+4. Then consider, roughly in value order:
    - **Grouped leave-mice-out split** (§8) — biggest scientific win.
    - **Real segmentation metrics**: held-out IoU / Dice / AP at IoU thresholds, per
      mouse. Training loss alone cannot tell you if the model is good, and this is what
