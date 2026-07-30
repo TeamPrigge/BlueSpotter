@@ -14,7 +14,8 @@ pipeline for quantitative LC analysis.
 | Code (this repo, notebook, config) | GitHub `TeamPrigge/BlueSpotter` |
 | Training images + masks | Google Drive `SoftwareTools/BlueSpotter/data` |
 | Trained model weights | Google Drive `SoftwareTools/BlueSpotter/model` |
-| Experiment tracking (MLflow) | Drive-synced `mlruns/` (overridable to a remote server) |
+| Experiment tracking (MLflow) | SQLite DB homed on Drive, artifacts in Drive `mlartifacts/` |
+| Model versions | MLflow Model Registry (`models:/bluespotter-lc/<n>`) |
 
 **Git holds code and data *descriptions* — never image data or model weights.**
 Large binaries live in Drive. DVC versions the manifests and a content index of
@@ -43,7 +44,8 @@ BlueSpotter/
 │   ├── manifest_sync.py              # DVC stage: snapshot manifests from Drive
 │   ├── drive_index.py                # DVC stage: content-index the Drive files
 │   ├── validate.py                   # DVC stage: schema + split-leakage checks
-│   ├── mlflow_utils.py               # MLflow tracking + data provenance
+│   ├── mlflow_store.py               # SQLite backend store: Drive home, local working copy
+│   ├── mlflow_utils.py               # MLflow tracking, provenance, model registration
 │   └── train.py                      # Cellpose-SAM transfer learning
 ├── deploy/                          # model hosting: HF Hub upload + Gradio Space demo
 │   ├── hub/                          #   push weights + model card to the Hub
@@ -73,6 +75,25 @@ dvc metrics diff main                        # what changed on this branch
 animal (and one left/right hemisphere pair from a single section) appears in both
 splits, which makes held-out scores optimistic. Details and the reasoning are in
 [docs/DVC.md](docs/DVC.md).
+
+## Experiment tracking
+
+Run metadata lives in a SQLite database whose home is Drive but which SQLite only
+ever opens on local disk — the Drive FUSE mount does not provide the file locking
+SQLite needs, and pointing it there corrupts the database. `train.run()` restores
+it at the start, checkpoints it to Drive on a timer, and publishes it at the end.
+
+```bash
+python -m bluespotter.mlflow_store status       # where things are, and are they intact
+python -m bluespotter.mlflow_store migrate      # one-time: import legacy mlruns/
+python -m bluespotter.mlflow_store checkpoint   # publish the DB to Drive
+```
+
+A database backend is also what makes the **Model Registry** work at all; it is
+unavailable on the legacy file store. Each run registers its weights as
+`models:/bluespotter-lc/<n>`, tagged with the DVC dataset hash and git commit that
+produced it. See [docs/MLFLOW.md](docs/MLFLOW.md) — including why migration must
+happen before your first new run.
 
 ## Hosting the trained model
 

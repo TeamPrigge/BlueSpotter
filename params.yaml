@@ -63,7 +63,31 @@ train:
 
 mlflow:
   experiment_name: bluespotter-lc-segmentation
-  # Leave tracking_uri empty to log into the Drive-synced mlruns folder above.
-  # To use a hosted server later, set the MLFLOW_TRACKING_URI env var instead —
-  # it takes precedence over this file. No code change needed.
+
+  # Backend store for run metadata.
+  #   sqlite  a SQLite database homed on Drive but operated on local disk.
+  #           Required for the Model Registry, which does not work on a file
+  #           store. See docs/MLFLOW.md for why the .db cannot live directly on
+  #           the Drive mount (SQLite needs POSIX locking; FUSE fakes it).
+  #   file    legacy ./mlruns file store. MLflow has this in maintenance mode and
+  #           slated for removal, and it cannot support the registry.
+  backend: sqlite
+
+  db_subdir: mlflow            # -> {drive_root}/mlflow/mlflow.db   (durable home)
+  db_name: mlflow.db
+  artifact_subdir: mlartifacts  # -> {drive_root}/mlartifacts       (blobs, on Drive)
+  mlruns_subdir_legacy: mlruns  # old file store, kept for migration only
+
+  # Publish the local DB back to Drive every N minutes while training runs, so a
+  # Colab crash costs at most this much history. Time-based rather than
+  # epoch-based because cellpose's train_seg exposes no per-epoch callback.
+  # 0 disables mid-run checkpoints (the end-of-run checkpoint always happens).
+  checkpoint_every_minutes: 5
+
+  # Register trained weights in the MLflow Model Registry under this name.
+  registered_model_name: bluespotter-lc
+
+  # Leave empty to use the backend above. Set the MLFLOW_TRACKING_URI env var to
+  # point at a hosted tracking server instead — it takes precedence over this
+  # file, so no code change is needed.
   tracking_uri: ""

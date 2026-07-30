@@ -15,9 +15,11 @@ easy to follow what is happening at each stage:
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import shutil
 from pathlib import Path
+from typing import Any
 
 import mlflow
 import numpy as np
@@ -28,6 +30,7 @@ from .data import cache_from_drive, load_dataset
 from .mlflow_utils import (
     log_data_provenance,
     log_params_from_config,
+    register_model,
     start_tracking,
     write_dvc_metrics,
 )
@@ -113,8 +116,16 @@ def run(cfg: Config | None = None) -> Path:
     print(f"  Loading pretrained model: {cfg.model['pretrained']}  (Cellpose-SAM)")
     model = models.CellposeModel(gpu=gpu, pretrained_model=cfg.model["pretrained"])
 
+    # Keep publishing run metadata to Drive while training runs, so a Colab
+    # session that dies mid-run does not take the whole history with it.
+    if str(cfg.tracking_uri()).startswith("sqlite:"):
+        from .mlflow_store import PeriodicCheckpointer
+        db_checkpointer: Any = PeriodicCheckpointer(cfg)
+    else:
+        db_checkpointer = contextlib.nullcontext()
+
     run_name = f"{cfg.model['name']}_{_dt.datetime.now():%Y%m%d_%H%M%S}"
-    with mlflow.start_run(run_name=run_name):
+    with db_checkpointer, mlflow.start_run(run_name=run_name) as active_run:
         log_params_from_config(cfg)
         mlflow.log_param("n_train", len(images))
         mlflow.log_param("n_test", len(test_images))
@@ -175,13 +186,27 @@ def run(cfg: Config | None = None) -> Path:
         )
 
         # ---- STEP 5: save --------------------------------------------------
-        _banner("5/5", "Save model to Drive + log as MLflow artifact")
+        _banner("5/5", "Save model to Drive, log artifact, register version")
         cfg.model_dir.mkdir(parents=True, exist_ok=True)
         drive_model = cfg.model_dir / Path(model_path).name
         shutil.copy2(model_path, drive_model)
         mlflow.log_artifact(str(model_path), artifact_path="model")
         mlflow.log_param("model_drive_path", str(drive_model))
         print(f"  Model saved to Drive: {drive_model}")
+
+        # Version the weights in the Model Registry so deploy/ can refer to
+        # models:/bluespotter-lc/<n> rather than a mutable path on Drive.
+        version = register_model(cfg, active_run.info.run_id, weights_path=drive_model)
+        if version:
+            mlflow.set_tag("registered_version", version)
+
+    # Publish the run metadata from the local SQLite working copy back to its
+    # durable home on Drive. Outside the run context so it also happens if the
+    # run itself ended badly.
+    if str(cfg.tracking_uri()).startswith("sqlite:"):
+        from .mlflow_store import checkpoint_quietly
+        _banner("5/5", "Checkpoint MLflow database to Drive")
+        checkpoint_quietly(cfg)
 
     print("\nDONE. Trained model path returned to caller.\n")
     return drive_model

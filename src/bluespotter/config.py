@@ -112,13 +112,25 @@ class Config:
         return self.raw["mlflow"]
 
     def tracking_uri(self) -> str:
-        """MLflow tracking URI. Env var wins; else params.yaml; else Drive mlruns."""
+        """MLflow tracking URI.
+
+        Precedence: MLFLOW_TRACKING_URI env var (so a hosted server can be dropped
+        in without touching code) > params.yaml mlflow.tracking_uri > the backend
+        selected by mlflow.backend.
+
+        For the `sqlite` backend this returns the *local* working copy, never the
+        path on Drive — SQLite must not operate on a FUSE mount. The Drive copy is
+        the durable home, managed by bluespotter.mlflow_store.
+        """
         env = os.environ.get("MLFLOW_TRACKING_URI")
         if env:
             return env
         cfg = self.raw["mlflow"].get("tracking_uri") or ""
         if cfg:
             return cfg
+        if self.raw["mlflow"].get("backend", "file") == "sqlite":
+            from .mlflow_store import local_db, sqlite_uri
+            return sqlite_uri(local_db(self))
         return f"file://{self.mlruns_dir}"
 
 
