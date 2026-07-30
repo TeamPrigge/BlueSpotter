@@ -1,7 +1,24 @@
-# Tooling configuration for BlueSpotter.
+# Packaging + tooling configuration for BlueSpotter.
+
+# Making this an installable package is not ceremony: `python -m bluespotter.x` in a
+# notebook runs a *subprocess*, and a subprocess does not inherit sys.path edits made
+# in the kernel. `pip install -e .` puts the package on the path for every process,
+# which is what the DVC stages and the notebook shell cells need.
 #
-# The rule set is pinned explicitly rather than left to the linter's defaults, so
-# that upgrading ruff does not spontaneously turn a green pull request red.
+# Runtime dependencies deliberately live in requirements.txt rather than here, so an
+# editable install stays instant and does not try to resolve cellpose/torch.
+[project]
+name = "bluespotter"
+version = "0.1.0"
+description = "Locus coeruleus-optimised neuronal segmentation built on Cellpose-SAM"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 100
