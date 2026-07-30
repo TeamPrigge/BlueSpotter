@@ -4,8 +4,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from .config import Config, load_config
 from .manifest import load_manifest
@@ -32,10 +32,13 @@ def plot_lr(cfg: Config | None = None):
     LR = cellpose_lr_schedule(cfg.train["n_epochs"], cfg.train["learning_rate"])
     plt.figure(figsize=(7, 3.2))
     plt.plot(LR, lw=2)
-    plt.xlabel("epoch"); plt.ylabel("learning rate")
+    plt.xlabel("epoch")
+    plt.ylabel("learning rate")
     plt.title(f"Cellpose LR schedule  (n_epochs={cfg.train['n_epochs']}, "
               f"base lr={cfg.train['learning_rate']})")
-    plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
     return LR
 
 
@@ -76,7 +79,7 @@ def plot_predictions(cfg: Config | None = None, model=None, model_path=None,
         idx = rng.sample(range(len(imgs)), min(n, len(imgs)))
         fig, axes = plt.subplots(1, len(idx), figsize=(4 * len(idx), 4.2))
         axes = np.atleast_1d(axes)
-        for ax, i in zip(axes, idx):
+        for ax, i in zip(axes, idx, strict=False):
             img, gt = imgs[i], np.asarray(lbls[i])
             pred = np.asarray(model.eval(img)[0])
             ax.imshow(_disp(img), cmap="gray")
@@ -87,4 +90,5 @@ def plot_predictions(cfg: Config | None = None, model=None, model_path=None,
             ax.set_title(f"GT={int(gt.max())}  pred={int(pred.max())}", fontsize=9)
             ax.axis("off")
         fig.suptitle(f"{split.upper()}  —  green = ground truth,  red = model", fontsize=12)
-        plt.tight_layout(); plt.show()
+        plt.tight_layout()
+        plt.show()

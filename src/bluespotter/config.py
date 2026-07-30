@@ -26,6 +26,35 @@ def _find_params(start: Path | None = None) -> Path:
 @dataclass
 class Config:
     raw: dict[str, Any] = field(default_factory=dict)
+    params_path: Path | None = None
+
+    # --- Repo layout (git + DVC live here) ---
+    @property
+    def repo_root(self) -> Path:
+        """Directory containing params.yaml — i.e. the git/DVC repo root."""
+        if self.params_path is not None:
+            return Path(self.params_path).resolve().parent
+        return _find_params().parent
+
+    @property
+    def dvc(self) -> dict[str, Any]:
+        return self.raw.get("dvc", {})
+
+    def repo_manifest(self, split: str) -> Path:
+        """The DVC-tracked manifest snapshot inside the repo."""
+        return self.repo_root / self.dvc.get("manifest_dir", "data/manifests") / f"{split}.csv"
+
+    def manifest_for(self, split: str) -> Path:
+        """Manifest to actually train from.
+
+        Prefers the DVC-tracked repo snapshot (so the run is pinned to a commit)
+        and falls back to reading the live copy on Drive if the snapshot has not
+        been created yet.
+        """
+        snap = self.repo_manifest(split)
+        if snap.exists():
+            return snap
+        return self.train_manifest if split == "train" else self.test_manifest
 
     # --- Drive paths (source of truth for data + model) ---
     @property
@@ -95,6 +124,6 @@ class Config:
 
 def load_config(path: str | os.PathLike | None = None) -> Config:
     p = Path(path) if path else _find_params()
-    with open(p, "r") as fh:
+    with open(p) as fh:
         raw = yaml.safe_load(fh)
-    return Config(raw=raw)
+    return Config(raw=raw, params_path=Path(p).resolve())

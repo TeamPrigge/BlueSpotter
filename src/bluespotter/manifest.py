@@ -21,8 +21,13 @@ _ED_COHORT = "NM_hightiter_histology_brains_ED"
 _LOW_COHORT = "NM_lowtiter_histology_brains"
 
 
-def _resolve(nm_root: Path, row: dict):
-    """Return (image_path, mask_path, is_npy) on the mounted Drive for a row."""
+def resolve_row(nm_root: Path, row: dict):
+    """Return (image_path, mask_path, is_npy) on the mounted Drive for a row.
+
+    This is the single source of truth for manifest-row -> Drive-path mapping.
+    Both the training loader and the DVC indexing stage (`drive_index.py`) call
+    it, so a layout change only ever has to be made here.
+    """
     ch = row.get("channel", "TH")
     iname, mname = row["image_name"], row["mask_name"]
     if row["mask_type"].startswith("seg_npy"):
@@ -32,6 +37,10 @@ def _resolve(nm_root: Path, row: dict):
     img = nm_root / _ED_COHORT / "processed" / "cropped" / ch / iname
     msk = nm_root / _ED_COHORT / "masks" / ch / mname
     return img, msk, False
+
+
+# Backwards-compatible private alias (older call sites).
+_resolve = resolve_row
 
 
 def _imread(path: Path):
@@ -68,7 +77,7 @@ def load_manifest(csv_path, nm_root, cache_dir=None, service=None):
                 img, msk = _imread(ipath), _imread(mpath)
             images.append(np.asarray(img))
             labels.append(np.asarray(msk).astype(np.int32))
-        except Exception as e:  # noqa: BLE001 - skip a bad/missing row, keep going
+        except Exception as e:
             missing += 1
             print(f"    [skip {i}] {r.get('image_name','?')}: {type(e).__name__} {e}")
         if i % 20 == 0:

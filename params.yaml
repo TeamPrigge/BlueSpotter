@@ -26,6 +26,27 @@ data:
   mask_filter: _masks    # substring identifying mask files
   test_split: 0.15       # fraction held out for validation (if no test dir)
 
+dvc:
+  # --- Where the versioned copies live inside the repo (tracked by DVC) ---
+  manifest_dir: data/manifests   # snapshots of train.csv / test.csv from Drive
+  index_dir: data/index          # per-file size/mtime/hash index of Drive content
+  report_dir: reports            # validation + metrics JSON
+
+  # How hard to work to detect that a Drive file changed underneath us:
+  #   full        md5 the whole file            (exact; slowest over a Drive mount)
+  #   partial     md5 first+last 4 MiB + size   (fast; catches re-exports)
+  #   size_mtime  no content read               (fastest; catches almost nothing)
+  # Hashes are cached by (path, size, mtime) so only changed files are re-read.
+  hash_mode: partial
+
+  # Fail the pipeline if a manifest row points at a file that is not on Drive.
+  fail_on_missing: true
+
+  # Fail if the same mouse/slice appears in both train and test. Currently a
+  # warning only, because the existing split does overlap - see reports/validation.json.
+  # Flip to true once the split is grouped by animal.
+  fail_on_group_leak: false
+
 model:
   # Fine-tune from the pretrained Cellpose-SAM weights.
   pretrained: cpsam

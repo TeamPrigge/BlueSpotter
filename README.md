@@ -16,8 +16,11 @@ pipeline for quantitative LC analysis.
 | Trained model weights | Google Drive `SoftwareTools/BlueSpotter/model` |
 | Experiment tracking (MLflow) | Drive-synced `mlruns/` (overridable to a remote server) |
 
-**Git holds code only — never image data or model weights.** Large binaries live
-in Drive. See [docs/SETUP.md](docs/SETUP.md) for the full workflow.
+**Git holds code and data *descriptions* — never image data or model weights.**
+Large binaries live in Drive. DVC versions the manifests and a content index of
+the Drive files they point at, so every training run can name the exact dataset
+it used. See [docs/SETUP.md](docs/SETUP.md) for the workflow and
+[docs/DVC.md](docs/DVC.md) for data versioning.
 
 ## Quick start (Colab)
 
@@ -36,16 +39,40 @@ BlueSpotter/
 ├── src/bluespotter/
 │   ├── config.py                     # loads params.yaml, resolves Drive paths
 │   ├── data.py                       # Drive→local caching, dataset loading
-│   ├── mlflow_utils.py               # MLflow tracking setup
+│   ├── manifest.py                   # manifest row → Drive path resolution
+│   ├── manifest_sync.py              # DVC stage: snapshot manifests from Drive
+│   ├── drive_index.py                # DVC stage: content-index the Drive files
+│   ├── validate.py                   # DVC stage: schema + split-leakage checks
+│   ├── mlflow_utils.py               # MLflow tracking + data provenance
 │   └── train.py                      # Cellpose-SAM transfer learning
 ├── deploy/                          # model hosting: HF Hub upload + Gradio Space demo
 │   ├── hub/                          #   push weights + model card to the Hub
 │   └── space/                        #   runnable Gradio demo Space
+├── tests/                            # synthetic-Drive tests for the data layer
+├── dvc.yaml                          # the pipeline (dvc dag / dvc repro)
+├── dvc.lock                          # pins the exact dataset version per run
+├── reports/                          # committed metrics: validation + index summaries
 ├── params.yaml                       # all paths + hyperparameters
+├── pyproject.toml                    # ruff + pytest config
 ├── requirements.txt
 ├── .pre-commit-config.yaml           # nbstripout (keeps notebooks clean in git)
-└── docs/SETUP.md
+└── docs/{SETUP,DVC}.md
 ```
+
+## Data versioning
+
+The images stay in Drive; DVC versions what points at them.
+
+```bash
+dvc repro validate index-train index-test   # data checks, no GPU needed
+dvc push                                    # blobs -> Drive dvcstore
+dvc metrics diff main                        # what changed on this branch
+```
+
+`validate` currently reports a **train/test group-leakage warning**: the same
+animal (and one left/right hemisphere pair from a single section) appears in both
+splits, which makes held-out scores optimistic. Details and the reasoning are in
+[docs/DVC.md](docs/DVC.md).
 
 ## Hosting the trained model
 

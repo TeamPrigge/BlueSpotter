@@ -1,6 +1,15 @@
 # --- Data & models never go in git (they live in Google Drive) ---
 data/*
 !data/.gitkeep
+# DVC pipeline metafiles must stay visible to git even under data/ — they are
+# the pointers, not the payload. The payload itself stays ignored.
+!data/**/*.dvc
+!data/**/.gitignore
+
+# --- DVC ---
+# Committed:  dvc.yaml, dvc.lock, .dvc/config, *.dvc, reports/*.json
+# Ignored:    .dvc/cache, .dvc/tmp, .dvc/config.local (handled in .dvc/.gitignore)
+/dvc.lock.bak
 *.tif
 *.tiff
 *.czi

@@ -1,0 +1,131 @@
+name: CI
+
+# What this can and cannot check.
+#
+# GitHub runners have no access to the lab's Google Drive, so CI can never see
+# the images themselves. That is fine — the point of the DVC setup is that the
+# *description* of the dataset is in git, and descriptions are exactly what CI is
+# good at checking. So we verify: the pipeline definition is well-formed, the
+# lock file is not stale, the committed data reports are internally consistent,
+# and the resolver/indexer/validator logic passes its tests against a synthetic
+# Drive tree. Anything needing real images or a GPU runs in Colab.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pytest pyyaml
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+  dvc:
+    name: DVC pipeline integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # dvc metrics diff needs history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install 'dvc>=3.50' pyyaml
+
+      - name: dvc.yaml parses and the DAG resolves
+        run: dvc dag
+
+      - name: dvc.lock covers every stage in dvc.yaml
+        # Catches the common mistake of adding or renaming a stage and committing
+        # dvc.yaml without re-running dvc repro.
+        run: |
+          python - <<'PY'
+          import sys, yaml
+          pipeline = set(yaml.safe_load(open("dvc.yaml"))["stages"])
+          try:
+              lock = set(yaml.safe_load(open("dvc.lock"))["stages"])
+          except FileNotFoundError:
+              # Bootstrapping: the pipeline has never been run on a machine with
+              # Drive mounted yet. Warn rather than block, then enforce from the
+              # first `dvc repro` onwards.
+              print("::warning title=No dvc.lock::run `dvc repro` in Colab and "
+                    "commit dvc.lock to start pinning dataset versions")
+              sys.exit(0)
+          missing = pipeline - lock
+          extra = lock - pipeline
+          if missing:
+              sys.exit(f"stale dvc.lock: never locked {sorted(missing)}. Run `dvc repro`.")
+          if extra:
+              print(f"note: dvc.lock has stages no longer in dvc.yaml: {sorted(extra)}")
+          print(f"dvc.lock covers all {len(pipeline)} stages")
+          PY
+
+      - name: Data validation report is clean
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          p = pathlib.Path("reports/validation.json")
+          if not p.exists():
+              print("::warning title=No validation report::run `dvc repro validate` "
+                    "in Colab and commit reports/validation.json")
+              sys.exit(0)
+          r = json.loads(p.read_text())
+          print(json.dumps(r, indent=2))
+          if r.get("n_errors"):
+              sys.exit(f"{r['n_errors']} manifest error(s) — see reports/validation_detail.json")
+          # Group leakage is reported loudly but does not fail the build until the
+          # split has been regrouped by animal. Flip fail_on_group_leak in
+          # params.yaml, then tighten this to a hard failure.
+          mice, slices = r.get("n_mouse_overlap", 0), r.get("n_slice_overlap", 0)
+          if mice or slices:
+              print(f"::warning title=Train/test leakage::{mice} mice and {slices} "
+                    f"slice(s) appear in both splits; held-out scores are optimistic")
+          print("validation OK")
+          PY
+
+      - name: Every indexed file was found on Drive
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          bad = []
+          for split in ("train", "test"):
+              p = pathlib.Path(f"reports/{split}_index_summary.json")
+              if not p.exists():
+                  print(f"note: {p} not committed yet, skipping")
+                  continue
+              s = json.loads(p.read_text())
+              print(f"{split}: {s['files_present']}/{s['files_indexed']} present, "
+                    f"{s['total_gib']} GiB, hash={s['dataset_hash'][:12]} "
+                    f"({s['hash_mode']})")
+              if s.get("files_missing"):
+                  bad.append(f"{split}: {s['files_missing']} missing file(s)")
+          if bad:
+              sys.exit("; ".join(bad))
+          PY
+
+      - name: Show metrics change on this PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: dvc metrics diff --md origin/${{ github.base_ref }} >> $GITHUB_STEP_SUMMARY
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check src/ tests/

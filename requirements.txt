@@ -10,6 +10,12 @@ tifffile>=2024.1        # read/write TIFF image + mask stacks
 scikit-image>=0.22      # morphology / feature extraction (downstream)
 matplotlib>=3.8         # quick visual QC
 
+# Data versioning. Plain `dvc` is enough: the remote is a directory on the mounted
+# Drive, so none of the cloud extras (dvc[gdrive], dvc[s3], ...) are needed.
+dvc>=3.50
+
 # Dev / repo hygiene (optional locally; not needed for a training run)
 nbstripout>=0.7
 pre-commit>=3.7
+pytest>=8.0
+ruff>=0.6

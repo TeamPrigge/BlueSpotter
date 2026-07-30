@@ -1,0 +1,33 @@
+# Tooling configuration for BlueSpotter.
+#
+# The rule set is pinned explicitly rather than left to the linter's defaults, so
+# that upgrading ruff does not spontaneously turn a green pull request red.
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"   # keep the code runnable on older Colab images
+extend-exclude = ["notebooks", "landing", "deploy", "docs"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "B",    # bugbear: likely bugs
+    "UP",   # pyupgrade
+    "SIM",  # simplifications
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E741",  # ambiguous names like `l` — common and readable in array code
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately build fixture rows from compact whitespace-separated strings.
+"tests/*" = ["SIM905"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

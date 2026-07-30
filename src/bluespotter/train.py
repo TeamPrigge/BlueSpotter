@@ -25,7 +25,12 @@ from cellpose import io, models, train
 
 from .config import Config, load_config
 from .data import cache_from_drive, load_dataset
-from .mlflow_utils import log_params_from_config, start_tracking
+from .mlflow_utils import (
+    log_data_provenance,
+    log_params_from_config,
+    start_tracking,
+    write_dvc_metrics,
+)
 
 
 def _banner(step: str, text: str) -> None:
@@ -38,7 +43,7 @@ def _banner(step: str, text: str) -> None:
 def _split(images, labels, test_split: float):
     """Deterministic train/val split used when no separate test folder exists."""
     n = len(images)
-    k = max(1, int(round(n * test_split)))
+    k = max(1, round(n * test_split))
     rng = np.random.default_rng(0)
     idx = rng.permutation(n)
     val_idx, tr_idx = idx[:k], idx[k:]
@@ -59,8 +64,9 @@ def run(cfg: Config | None = None) -> Path:
         import torch
         gpu = torch.cuda.is_available()
         print(f"  GPU available : {gpu}"
-              + (f"  ({torch.cuda.get_device_name(0)})" if gpu else "  <-- switch Colab to a GPU runtime!"))
-    except Exception as e:  # noqa: BLE001
+              + (f"  ({torch.cuda.get_device_name(0)})" if gpu
+                 else "  <-- switch Colab to a GPU runtime!"))
+    except Exception as e:
         gpu = False
         print(f"  Could not query torch/GPU: {e}")
 
@@ -68,11 +74,18 @@ def run(cfg: Config | None = None) -> Path:
     if cfg.use_manifest:
         _banner("2/5", "Data: load image/mask pairs from manifest (train.csv / test.csv)")
         from .manifest import load_manifest
-        print(f"  Train manifest : {cfg.train_manifest}")
-        print(f"  Test  manifest : {cfg.test_manifest}")
+        # Prefer the DVC-tracked snapshot in the repo over the live Drive copy, so
+        # the run is pinned to a manifest revision recorded in dvc.lock rather
+        # than to whatever the CSV happens to say right now.
+        train_mf, test_mf = cfg.manifest_for("train"), cfg.manifest_for("test")
+        pinned = train_mf == cfg.repo_manifest("train")
+        print(f"  Train manifest : {train_mf}")
+        print(f"  Test  manifest : {test_mf}")
         print(f"  Image source   : {cfg.nmslices_root}")
-        images, labels = load_manifest(cfg.train_manifest, cfg.nmslices_root)
-        test_images, test_labels = load_manifest(cfg.test_manifest, cfg.nmslices_root)
+        print(f"  Version pinned : {pinned}"
+              + ("" if pinned else "   <-- run `dvc repro sync-manifests` to pin this run"))
+        images, labels = load_manifest(train_mf, cfg.nmslices_root)
+        test_images, test_labels = load_manifest(test_mf, cfg.nmslices_root)
     else:
         _banner("2/5", "Data: cache from Drive folder -> local disk, then load pairs")
         print(f"  Drive data dir : {cfg.data_dir}")
@@ -84,12 +97,15 @@ def run(cfg: Config | None = None) -> Path:
             mask_filter=cfg.data["mask_filter"],
         )
         if not test_images:
-            print(f"  No separate test folder -> splitting off {cfg.data['test_split']:.0%} for validation")
-            images, labels, test_images, test_labels = _split(images, labels, cfg.data["test_split"])
+            print("  No separate test folder -> splitting off "
+                  f"{cfg.data['test_split']:.0%} for validation")
+            images, labels, test_images, test_labels = _split(
+                images, labels, cfg.data["test_split"])
     print(f"  Training images : {len(images)}")
     print(f"  Validation images: {len(test_images)}")
     if len(images) == 0:
-        raise RuntimeError("No training images found. Check params.yaml paths and the *_img/_masks filters.")
+        raise RuntimeError("No training images found. Check params.yaml paths "
+                           "and the *_img/_masks filters.")
 
     # ---- STEP 3: MLflow + model --------------------------------------------
     _banner("3/5", "MLflow tracking + load pretrained Cellpose-SAM")
@@ -103,6 +119,9 @@ def run(cfg: Config | None = None) -> Path:
         mlflow.log_param("n_train", len(images))
         mlflow.log_param("n_test", len(test_images))
         mlflow.log_param("gpu", gpu)
+        # Record git commit + DVC dataset hashes so this run can be traced back
+        # to the exact bytes it trained on.
+        log_data_provenance(cfg)
 
         # ---- STEP 4: fine-tune ---------------------------------------------
         _banner("4/5", f"Fine-tuning  (run: {run_name})")
@@ -130,8 +149,30 @@ def run(cfg: Config | None = None) -> Path:
         for epoch, vl in enumerate(np.atleast_1d(test_losses)):
             if vl is not None and not np.isnan(vl):
                 mlflow.log_metric("test_loss", float(vl), step=epoch)
-        final_train = float(np.atleast_1d(train_losses)[-1])
+        train_hist = [float(x) for x in np.atleast_1d(train_losses)]
+        test_hist = [
+            float(x) for x in np.atleast_1d(test_losses)
+            if x is not None and not np.isnan(x)
+        ]
+        final_train = train_hist[-1]
         print(f"  Final train loss: {final_train:.4f}")
+
+        # Mirror the headline numbers into reports/ so `dvc metrics diff` can show
+        # the effect of a change on a pull request, not just in the MLflow UI.
+        write_dvc_metrics(
+            cfg,
+            metrics={
+                "final_train_loss": final_train,
+                "best_train_loss": min(train_hist) if train_hist else None,
+                "final_test_loss": test_hist[-1] if test_hist else None,
+                "best_test_loss": min(test_hist) if test_hist else None,
+                "n_epochs": cfg.train["n_epochs"],
+                "n_train_images": len(images),
+                "n_test_images": len(test_images),
+                "run_name": run_name,
+            },
+            losses={"train": train_hist, "test": test_hist},
+        )
 
         # ---- STEP 5: save --------------------------------------------------
         _banner("5/5", "Save model to Drive + log as MLflow artifact")

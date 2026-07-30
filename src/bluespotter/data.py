@@ -62,6 +62,6 @@ def load_dataset(
         mask_filter=mask_filter,
         look_one_level_down=False,
     )
-    images, labels, image_names, test_images, test_labels, test_names = out
+    images, labels, _image_names, test_images, test_labels, _test_names = out
     print(f"Loaded {len(images)} training images, {len(test_images or [])} test images")
     return images, labels, test_images, test_labels
