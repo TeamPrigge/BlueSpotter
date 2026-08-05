@@ -1,4 +1,57 @@
 {
-  "status": "skipped",
-  "reason": "dvc.discover=false"
+  "status": "ok",
+  "nmslices_root": "/content/drive/MyDrive/TeamPrigge/Data/NM_Slices",
+  "pairs_found": 2803,
+  "pairs_kept": 1634,
+  "duplicates_collapsed": 1169,
+  "unparsed_files": 94,
+  "unparsed_examples": [
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC-479_01.vsi - ap-5.34_TH_R_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC-479_01.vsi - ap-5.34_TH_L_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC-479_00.vsi - ap-5.52_TH_L_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC-479_02.vsi - ap-4.72_TH_L_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC-479_02.vsi - ap-4.72_TH_R_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC-479_00.vsi - ap-5.52_TH_R_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC_0453.vsi - ap8_TH_left_seg.npy",
+    "NM_lowtiter_histology_brains/masks/npy_masks/DHC_0464.vsi - ap9_TH_right_seg.npy",
+    "NM_tyr_titering/masks/TH_DHC-2032-5.60_L_cp_masks - Copy.png",
+    "NM_tyr_titering/processed/cropped1/png/TH_DHC-2092-5.20_L_cp_masks.png"
+  ],
+  "train_rows": 1386,
+  "test_rows": 248,
+  "ap_rows": 1443,
+  "mice_total": 117,
+  "mice_test": 20,
+  "by_cohort": {
+    "CNO": 225,
+    "Ernesto": 48,
+    "NM_hightiter_behavior_brains": 278,
+    "NM_hightiter_histology_brains_ED": 138,
+    "NM_lowtiter_behavior_brains": 235,
+    "NM_lowtiter_histology_brains": 423,
+    "NM_tyr_titering": 264,
+    "dKi_NM": 23
+  },
+  "by_mask_type": {
+    "cp_masks_png": 783,
+    "seg_npy": 851
+  },
+  "by_channel": {
+    "BF": 25,
+    "CH2": 23,
+    "HA": 398,
+    "PFC": 10,
+    "SN": 9,
+    "TH": 1169
+  },
+  "ap_mm_range": [
+    "-4.60",
+    "-5.88"
+  ],
+  "dry_run": false,
+  "written": [
+    "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/training_data/train.csv",
+    "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/training_data/test.csv",
+    "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/training_data/ap_position.csv"
+  ]
 }

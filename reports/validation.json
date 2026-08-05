@@ -1,13 +1,14 @@
 {
   "ok": true,
   "n_errors": 0,
-  "n_warnings": 2,
-  "n_train": 60,
-  "n_test": 15,
-  "test_fraction": 0.2,
-  "n_train_mice": 11,
-  "n_test_mice": 9,
+  "n_warnings": 0,
+  "n_train": 1386,
+  "n_test": 248,
+  "n_ap": 1443,
+  "test_fraction": 0.1518,
+  "n_train_mice": 97,
+  "n_test_mice": 20,
   "image_id_overlap": 0,
-  "n_mouse_overlap": 8,
-  "n_slice_overlap": 9
+  "n_mouse_overlap": 0,
+  "n_slice_overlap": 0
 }

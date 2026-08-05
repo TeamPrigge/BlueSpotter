@@ -3,19 +3,28 @@
   "train": {
     "source": "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/training_data/train.csv",
     "dest": "/content/BlueSpotter/data/manifests/train.csv",
-    "md5": "f55ac55abd8040927d952164711375b0",
+    "md5": "6212d0f7084c1f9fd1a58038fe46d659",
     "previous_md5": null,
     "status": "created",
-    "rows": 60,
-    "bytes": 13159
+    "rows": 1386,
+    "bytes": 483466
   },
   "test": {
     "source": "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/test_data/test.csv",
     "dest": "/content/BlueSpotter/data/manifests/test.csv",
-    "md5": "7d4322efc8e85bc9c76376f19aff9097",
+    "md5": "3c9282fabdd73c3849cd424d14cd603a",
     "previous_md5": null,
     "status": "created",
-    "rows": 15,
-    "bytes": 3416
+    "rows": 248,
+    "bytes": 88246
+  },
+  "ap_position": {
+    "source": "/content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/data/training_data/ap_position.csv",
+    "dest": "/content/BlueSpotter/data/manifests/ap_position.csv",
+    "md5": "386a84cd07a4196d726fd18d876a6e09",
+    "previous_md5": null,
+    "status": "created",
+    "rows": 1443,
+    "bytes": 522975
   }
 }

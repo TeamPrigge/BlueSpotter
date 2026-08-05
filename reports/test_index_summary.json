@@ -1,12 +1,12 @@
 {
   "manifest": "test.csv",
-  "rows": 15,
-  "files_indexed": 24,
-  "files_present": 24,
+  "rows": 248,
+  "files_indexed": 323,
+  "files_present": 323,
   "files_missing": 0,
-  "total_bytes": 817449117,
-  "total_gib": 0.761,
+  "total_bytes": 59366620357,
+  "total_gib": 55.289,
   "hash_mode": "partial",
-  "dataset_hash": "566dcb00498fbf3e1db7bc626e3b865b",
+  "dataset_hash": "d3925dd93612ea7d04a06075d5273875",
   "missing_examples": []
 }

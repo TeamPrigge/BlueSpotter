@@ -36,8 +36,7 @@ dvc:
   # Regenerate the manifests by walking the Drive mount instead of hand-editing
   # them. Off by default so a run on a machine without the mount does not wipe
   # the authored CSVs; turn on in Colab, where NM_Slices is actually present.
-  discover: false
-
+  discover: true
   # --- Where the versioned copies live inside the repo (tracked by DVC) ---
   manifest_dir: data/manifests   # snapshots of train.csv / test.csv from Drive
   index_dir: data/index          # per-file size/mtime/hash index of Drive content
