@@ -59,7 +59,79 @@ def _counts(rows: list[dict[str, str]], field: str) -> dict[str, int]:
     return dict(sorted(Counter(r.get(field, "") for r in rows).items()))
 
 
-def validate(train_csv: Path, test_csv: Path) -> dict[str, Any]:
+def validate_ap(ap_csv: Path, train_csv: Path, test_csv: Path) -> dict[str, Any]:
+    """Checks specific to the AP-position manifest.
+
+    This file is the seed for a second model — predicting rostrocaudal position
+    from LC shape — so its failure modes are different from segmentation's. What
+    matters here is that the coordinate is real and that the *AP* split does not
+    leak animals, which it would silently inherit if it just tagged along with
+    the segmentation split.
+    """
+    if not ap_csv.exists():
+        return {"present": False, "n_rows": 0, "errors": [], "warnings": []}
+
+    rows = _read(ap_csv)
+    errors: list[str] = []
+    warnings: list[str] = []
+    values: list[float] = []
+
+    for i, r in enumerate(rows, 2):
+        raw = (r.get("ap_mm") or "").strip()
+        if not raw:
+            errors.append(f"ap_position line {i}: blank ap_mm — the whole point of "
+                          f"this manifest is the coordinate")
+            continue
+        try:
+            v = float(raw)
+        except ValueError:
+            errors.append(f"ap_position line {i}: ap_mm {raw!r} is not a number")
+            continue
+        # Mouse LC spans roughly -5.0 to -5.9 mm from bregma. A positive value or
+        # one far outside that window means the filename was misread, not that
+        # the slice is exotic.
+        if not (-6.5 <= v <= -4.5):
+            errors.append(f"ap_position line {i}: ap_mm {v} is outside the LC range "
+                          f"(-6.5..-4.5 mm) — likely a misparsed file name")
+        values.append(v)
+
+    # Every AP row must also be a real segmentation row, otherwise the two
+    # datasets have drifted apart and the AP file is citing files nobody indexes.
+    # Match on rel_path, not image_id: `drive_links` rewrites image_id from a
+    # path to a Drive file-ID in this manifest only, so comparing IDs would
+    # report every row as an orphan the moment someone adds the links.
+    def _identity(r: dict[str, str]) -> str:
+        return (r.get("rel_path") or r.get("image_id") or "").strip()
+
+    seg_ids = {_identity(r) for r in _read(train_csv)} | \
+              {_identity(r) for r in _read(test_csv)}
+    orphans = [r.get("image_name", "?") for r in rows
+               if _identity(r) and _identity(r) not in seg_ids]
+    if orphans:
+        warnings.append(f"{len(orphans)} AP row(s) reference files that are in neither "
+                        f"train.csv nor test.csv (e.g. {', '.join(orphans[:3])})")
+
+    ap_tr = {r.get("mouse", "") for r in rows if r.get("split") == "train"}
+    ap_te = {r.get("mouse", "") for r in rows if r.get("split") == "test"}
+    ap_leak = sorted(m for m in (ap_tr & ap_te) if m)
+    if ap_leak:
+        errors.append(f"AP manifest: {len(ap_leak)} mouse/mice in both splits "
+                      f"({', '.join(ap_leak)}) — an AP model would be scored on "
+                      f"animals it trained on")
+
+    return {
+        "present": True,
+        "n_rows": len(rows),
+        "n_mice": len({r.get("mouse", "") for r in rows if r.get("mouse")}),
+        "ap_mm_min": round(min(values), 2) if values else None,
+        "ap_mm_max": round(max(values), 2) if values else None,
+        "n_ap_mouse_overlap": len(ap_leak),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def validate(train_csv: Path, test_csv: Path, ap_csv: Path | None = None) -> dict[str, Any]:
     train, test = _read(train_csv), _read(test_csv)
     errors: list[str] = []
     warnings: list[str] = []
@@ -145,12 +217,20 @@ def validate(train_csv: Path, test_csv: Path) -> dict[str, Any]:
     # column per leaf, so putting the per-mouse breakdown in the metrics file
     # would produce a table hundreds of columns wide and unreadable on a PR.
     # Metrics stay scalar; the breakdown goes next door.
+    ap = validate_ap(ap_csv, train_csv, test_csv) if ap_csv else {"present": False,
+                                                                  "n_rows": 0,
+                                                                  "errors": [],
+                                                                  "warnings": []}
+    errors.extend(ap["errors"])
+    warnings.extend(ap["warnings"])
+
     metrics = {
         "ok": not errors,
         "n_errors": len(errors),
         "n_warnings": len(warnings),
         "n_train": n_tr,
         "n_test": n_te,
+        "n_ap": ap["n_rows"],
         "test_fraction": round(n_te / (n_tr + n_te), 4) if (n_tr + n_te) else 0.0,
         "n_train_mice": composition["train"]["n_mice"],
         "n_test_mice": composition["test"]["n_mice"],
@@ -168,6 +248,7 @@ def validate(train_csv: Path, test_csv: Path) -> dict[str, Any]:
         },
         "composition": composition,
         "rows_per_mouse": dict(sorted(per_mouse.items())),
+        "ap_position": ap,
     }
     return {**metrics, "_detail": detail}
 
@@ -180,6 +261,12 @@ def _print(report: dict[str, Any]) -> None:
     print(f"  leakage: {report['image_id_overlap']} identical images, "
           f"{report['n_mouse_overlap']} shared mice, "
           f"{report['n_slice_overlap']} shared slices")
+    apr = detail.get("ap_position", {})
+    if apr.get("present"):
+        span = (f"{apr['ap_mm_min']}..{apr['ap_mm_max']} mm"
+                if apr.get("ap_mm_min") is not None else "no coordinates")
+        print(f"  AP subset: {apr['n_rows']} rows ({apr.get('n_mice', 0)} mice), "
+              f"bregma {span}")
     for e in detail["errors"]:
         print(f"  ERROR   {e}")
     for w in detail["warnings"]:
@@ -199,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     mdir = repo / dvc_cfg["manifest_dir"]
 
     print(f"[validate] manifests in {mdir}")
-    report = validate(mdir / "train.csv", mdir / "test.csv")
+    report = validate(mdir / "train.csv", mdir / "test.csv", mdir / "ap_position.csv")
     _print(report)
 
     rdir = repo / dvc_cfg["report_dir"]

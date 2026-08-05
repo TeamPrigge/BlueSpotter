@@ -27,7 +27,25 @@ def resolve_row(nm_root: Path, row: dict):
     This is the single source of truth for manifest-row -> Drive-path mapping.
     Both the training loader and the DVC indexing stage (`drive_index.py`) call
     it, so a layout change only ever has to be made here.
+
+    Two generations of manifest are supported. Rows written by
+    `bluespotter.discover` carry an explicit `rel_path` (and a relative path in
+    `mask_id`), which we trust directly — that is the only form that scales, as
+    the labelled cohorts live in a dozen differently-shaped folder layouts.
+    Older hand-authored rows have no `rel_path`, so we fall back to the two
+    hard-coded cohort layouts below.
     """
+    is_npy = str(row.get("mask_type", "")).startswith("seg_npy")
+
+    rel_img = (row.get("rel_path") or "").strip()
+    if rel_img:
+        img = nm_root / rel_img
+        # `mask_id` holds either a Drive file-ID (legacy) or a relative path
+        # (discover). A Drive ID never contains a separator, so that is the test.
+        rel_msk = (row.get("mask_id") or "").strip()
+        msk = nm_root / rel_msk if "/" in rel_msk else img
+        return img, (img if is_npy else msk), is_npy
+
     ch = row.get("channel", "TH")
     iname, mname = row["image_name"], row["mask_name"]
     if row["mask_type"].startswith("seg_npy"):

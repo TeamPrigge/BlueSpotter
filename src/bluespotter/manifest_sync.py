@@ -85,6 +85,32 @@ def main(argv: list[str] | None = None) -> int:
         "test": sync_one(cfg.test_manifest, mdir / "test.csv"),
     }
 
+    # The AP manifest is the seed for the shape->rostrocaudal-position model. It
+    # is versioned exactly like the segmentation manifests, but kept in its own
+    # file so the two datasets can be split and validated independently. Absent
+    # on older Drive layouts, so its absence is not an error.
+    ap_rel = cfg.raw["data"].get("ap_manifest")
+    if ap_rel:
+        ap_dst = mdir / "ap_position.csv"
+        ap_src = cfg.drive_root / ap_rel
+        if ap_src.exists():
+            result["ap_position"] = sync_one(ap_src, ap_dst)
+        else:
+            # The stage declares this file as an output, so it has to exist.
+            # A header-only CSV is honest: schema present, zero rows, and the
+            # provenance record below says exactly why.
+            from .discover import AP_FIELDS
+
+            ap_dst.parent.mkdir(parents=True, exist_ok=True)
+            ap_dst.write_text(",".join(AP_FIELDS) + "\n")
+            result["ap_position"] = {
+                "source": str(ap_src), "dest": str(ap_dst), "status": "absent",
+                "rows": 0,
+                "hint": "run `python -m bluespotter.discover` to generate it",
+            }
+            print("  ap_position  absent on Drive — wrote header-only stub; run "
+                  "`python -m bluespotter.discover` to populate it")
+
     # Provenance goes to reports/ so it is committed to git — the manifests
     # themselves are DVC-cached and therefore gitignored.
     prov = repo / dvc_cfg["report_dir"] / "manifest_source.json"

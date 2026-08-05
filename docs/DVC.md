@@ -57,12 +57,71 @@ Five stages, defined in `dvc.yaml`:
 
 | Stage | What it does |
 |---|---|
-| `sync-manifests` | Copies `train.csv` / `test.csv` from Drive into `data/manifests/`, where DVC hashes them. |
-| `validate` | Schema, duplicate rows, exact split overlap, and **group leakage** checks. |
-| `index-train` / `index-test` | Resolves every manifest row on Drive and records size, mtime and a content hash per file. |
+| `discover` | Walks the Drive mount and regenerates `train.csv`, `test.csv` and `ap_position.csv` from what is actually there. Gated on `dvc.discover`. |
+| `sync-manifests` | Copies those three CSVs from Drive into `data/manifests/`, where DVC hashes them. |
+| `validate` | Schema, duplicate rows, exact split overlap, **group leakage**, and AP-coordinate sanity checks. |
+| `index-train` / `index-test` / `index-ap` | Resolves every manifest row on Drive and records size, mtime and a content hash per file. |
 | `train` | Fine-tunes Cellpose-SAM. Depends on the *indexes*, so a changed image invalidates the model even if no manifest row moved. |
 
 Inspect it with `dvc dag`.
+
+## Why the manifests are generated, not authored
+
+`train.csv` started life as a hand-typed list. That works until it doesn't: the
+labelled cohorts on Drive grew to several hundred image/mask pairs across a dozen
+differently-shaped folder layouts, while the manifest still named 68 of them.
+Every slice a colleague segments is another row nobody types.
+
+So `discover` derives the manifests instead. It walks `data.nmslices_root`, finds
+every `*_seg.npy` and every `*_cp_masks.png` with its matching image, and reads
+mouse, channel, hemisphere and — where the name records it — the bregma
+coordinate out of the file name (`src/bluespotter/naming.py`). Rows carry a
+`rel_path`, so `manifest.py` no longer has to know each cohort's folder shape;
+adding a cohort is now a matter of putting files on Drive, not editing code.
+
+Two things it deliberately does *not* do:
+
+- **Guess.** A file name it cannot parse is reported in `reports/discovery.json`
+  and left out of the manifests. A missing row is visible; a row with invented
+  metadata is not.
+- **Split by image.** Splits are grouped by animal, via a deterministic hash of
+  the mouse ID. Two hemispheres of one section share biology, staining batch and
+  imaging session; scoring on one after training on the other measures
+  memorisation of that animal. The hash means the split is identical on every
+  machine and every rerun without a seed file to lose.
+
+`discover` is off by default (`dvc.discover: false`) so a run on a machine
+without the Drive mount cannot overwrite the manifests. Turn it on in Colab.
+
+## `ap_position.csv` — the anterior-posterior subset
+
+Roughly 500 labelled slices are named like `TH_DHC-2076-5.35_R_seg.npy`, where
+`5.35` is the distance behind bregma in millimetres. That is a free, per-file
+anatomical label, and it is the seed for a second model: predicting rostrocaudal
+position from LC shape.
+
+Those rows get their own manifest rather than an extra column on `train.csv`,
+because the two datasets need different treatment:
+
+- the AP model needs a split that is grouped by animal **and** stratified across
+  the AP range, which is not the segmentation split;
+- an AP row is only useful if the coordinate is trustworthy, so `validate`
+  rejects any value outside the LC's −6.5…−4.5 mm window as a misparsed name;
+- the AP dataset will version, train and publish on its own schedule.
+
+The same slices still appear in `train.csv`, where the AP label is simply unused
+— the AP file is a *view*, not a fork, and `validate` checks that every AP row
+is still present in one of the segmentation splits.
+
+Section ordinals like `ap2` in `DHC_0464_02.vsi - ap2_TH_left_seg.npy` are kept
+in a separate `ap_index` column and never treated as millimetres. They order
+sections within one animal but are not comparable across animals; mixing the two
+scales would quietly corrupt any AP regression.
+
+Run `python -m bluespotter.drive_links data/manifests/ap_position.csv` in Colab
+to fill in Drive file-IDs and clickable `drive_url` links, so the coordinates can
+be spot-checked against the actual images. It is optional and never fails the
+pipeline — a manifest without links still trains.
 
 The Drive-facing stages are marked `always_changed: true`. Drive can change at
 any moment without anything in git changing, so those stages must re-check every

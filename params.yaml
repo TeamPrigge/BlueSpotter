@@ -21,12 +21,23 @@ data:
   use_manifest: true                       # train from train.csv/test.csv (Drive IDs)
   train_manifest: data/training_data/train.csv
   test_manifest: data/test_data/test.csv
+  # Slices whose file names carry a real bregma coordinate (e.g.
+  # TH_DHC-2076-5.35_R -> -5.35 mm). Kept in its own manifest because it feeds a
+  # different model (LC shape -> rostrocaudal position) that needs its own split
+  # and its own validation. These rows also appear in train.csv for
+  # segmentation, where the AP label is simply unused.
+  ap_manifest: data/training_data/ap_position.csv
   nmslices_root: /content/drive/MyDrive/TeamPrigge/Data/NM_Slices   # mounted source images
   image_filter: _img     # substring identifying image files
   mask_filter: _masks    # substring identifying mask files
   test_split: 0.15       # fraction held out for validation (if no test dir)
 
 dvc:
+  # Regenerate the manifests by walking the Drive mount instead of hand-editing
+  # them. Off by default so a run on a machine without the mount does not wipe
+  # the authored CSVs; turn on in Colab, where NM_Slices is actually present.
+  discover: false
+
   # --- Where the versioned copies live inside the repo (tracked by DVC) ---
   manifest_dir: data/manifests   # snapshots of train.csv / test.csv from Drive
   index_dir: data/index          # per-file size/mtime/hash index of Drive content

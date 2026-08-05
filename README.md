@@ -49,6 +49,9 @@ BlueSpotter/
 ├── src/bluespotter/
 │   ├── config.py                     # loads params.yaml, resolves Drive paths
 │   ├── data.py                       # Drive→local caching, dataset loading
+│   ├── naming.py                     # file name → mouse / channel / side / bregma AP
+│   ├── discover.py                   # DVC stage: rebuild manifests by walking Drive
+│   ├── drive_links.py                # optional: attach Drive file-IDs + shareable links
 │   ├── manifest.py                   # manifest row → Drive path resolution
 │   ├── manifest_sync.py              # DVC stage: snapshot manifests from Drive
 │   ├── drive_index.py                # DVC stage: content-index the Drive files

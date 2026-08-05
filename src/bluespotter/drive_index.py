@@ -261,7 +261,7 @@ def build_index(manifest_csv: Path, nm_root: Path, out_csv: Path,
 # --------------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Content-index Drive files for a manifest split.")
-    ap.add_argument("--split", choices=["train", "test"], required=True)
+    ap.add_argument("--split", choices=["train", "test", "ap_position"], required=True)
     ap.add_argument("--params", default=None, help="path to params.yaml")
     args = ap.parse_args(argv)
 
