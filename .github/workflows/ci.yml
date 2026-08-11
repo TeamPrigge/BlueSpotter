@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install pytest pyyaml numpy
+      - run: pip install pytest pyyaml numpy scikit-image
       - name: Run tests
         run: python -m pytest tests/ -v
 
@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install pytest pyyaml numpy
+      - run: pip install pytest pyyaml numpy scikit-image
 
       - name: Scoring logic is correct
         # Runs for real, on the committed fixtures in assertions/. No GPU, no

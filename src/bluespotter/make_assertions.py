@@ -50,13 +50,9 @@ MIN_CELLS = 3       # a crop with one cell says almost nothing about counting
 
 
 def _load(row: dict, nm_root: Path):
-    from .manifest import _imread, resolve_row
+    from .manifest import load_pair
 
-    ipath, mpath, is_npy = resolve_row(nm_root, row)
-    if is_npy:
-        blob = np.load(ipath, allow_pickle=True).item()
-        return np.asarray(blob["img"]), np.asarray(blob["masks"]).astype(np.int32)
-    return np.asarray(_imread(ipath)), np.asarray(_imread(mpath)).astype(np.int32)
+    return load_pair(nm_root, row)
 
 
 def _crop_around_cells(image: np.ndarray, mask: np.ndarray,

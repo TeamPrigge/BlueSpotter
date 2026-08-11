@@ -7,7 +7,20 @@ mount we fall back to downloading it by Drive file-ID via the API.
 
 Two mask conventions are supported:
   * cp_masks_png : image is a .tif, mask is a Cellpose `_cp_masks.png`
-  * seg_npy      : image AND mask live inside one Cellpose `_seg.npy`
+  * seg_npy      : a Cellpose `_seg.npy`, which may or may not contain the image
+
+That "may or may not" is not a hedge — it is two generations of Cellpose, and
+getting it wrong cost us most of the training set once already. Older versions
+embedded the raw image under the key `img`. Newer ones dropped it to keep the
+files small and record only `filename`, a path on whoever ran the annotation.
+Roughly 680 of the 1,386 training rows are the newer kind.
+
+The old loader did `d["img"]`, caught the KeyError, and printed `[skip]`. So the
+pipeline reported 1,386 training images and trained on about 700, with nothing
+anywhere saying so: the DVC index counted the files as *present*, because they
+are — it never checked they were *loadable*. `load_manifest` now raises if the
+loss is large rather than continuing quietly, because a training set that halves
+without telling you is worse than one that fails.
 """
 from __future__ import annotations
 
@@ -19,6 +32,115 @@ import numpy as np
 # Source cohort -> folder layout under the NM_Slices root.
 _ED_COHORT = "NM_hightiter_histology_brains_ED"
 _LOW_COHORT = "NM_lowtiter_histology_brains"
+
+_IMAGE_EXTS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
+
+# name -> path index per cohort, built once on demand. Walking a Drive mount is
+# slow, so we pay for it at most once per cohort per process.
+_NAME_INDEX: dict[Path, dict[str, Path]] = {}
+
+
+def _cohort_index(root: Path) -> dict[str, Path]:
+    """Map lowercased file name -> path for every image under `root`."""
+    if root not in _NAME_INDEX:
+        index: dict[str, Path] = {}
+        if root.is_dir():
+            for p in root.rglob("*"):
+                if p.is_file() and p.suffix.lower() in _IMAGE_EXTS:
+                    index.setdefault(p.name.lower(), p)
+        _NAME_INDEX[root] = index
+    return _NAME_INDEX[root]
+
+
+def find_image_for_seg(npy_path: Path, blob: dict, nm_root: Path) -> Path | None:
+    """Locate the image belonging to a `_seg.npy` that does not embed one.
+
+    Tried in order of how much we trust them:
+
+      1. `<stem>.tif` (or .png/...) sitting next to the .npy — the usual layout,
+         and unambiguous.
+      2. The basename recorded in the blob's `filename` key, looked up next to
+         the .npy. The stored path itself is an absolute path on the annotator's
+         own machine and will not resolve here, but the file name survives.
+      3. The same basename anywhere under the cohort. Cohorts split images and
+         masks across sibling folders (masks/ vs processed/cropped/), so this
+         catches the common case at the cost of one directory walk.
+
+    Returns None rather than guessing if nothing matches.
+    """
+    stem = npy_path.name
+    for suffix in ("_seg.npy", " .seg.npy", "_seg_2.npy"):
+        if stem.lower().endswith(suffix.lower()):
+            stem = stem[: -len(suffix)]
+            break
+    else:
+        stem = npy_path.stem
+
+    for ext in _IMAGE_EXTS:
+        cand = npy_path.parent / f"{stem}{ext}"
+        if cand.exists():
+            return cand
+
+    recorded = str(blob.get("filename") or "")
+    names = [Path(recorded).name] if recorded else []
+    names += [f"{stem}{ext}" for ext in _IMAGE_EXTS]
+
+    for name in names:
+        if not name:
+            continue
+        cand = npy_path.parent / name
+        if cand.exists():
+            return cand
+
+    # Fall back to a cohort-wide lookup: everything under the first directory
+    # below nm_root that contains this file.
+    try:
+        cohort = nm_root / npy_path.relative_to(nm_root).parts[0]
+    except (ValueError, IndexError):
+        return None
+    index = _cohort_index(cohort)
+    for name in names:
+        hit = index.get(name.lower())
+        if hit is not None:
+            return hit
+    return None
+
+
+def load_pair(nm_root: Path, row: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Return (image, mask) for one manifest row. Raises if either is unusable.
+
+    The single place that knows how to turn a row into pixels — training,
+    evaluation and the assertion builder all go through here, so a format
+    surprise like the missing `img` key can only ever be fixed once.
+    """
+    nm_root = Path(nm_root)
+    ipath, mpath, is_npy = resolve_row(nm_root, row)
+
+    if not is_npy:
+        if not ipath.exists():
+            raise FileNotFoundError(ipath)
+        if not mpath.exists():
+            raise FileNotFoundError(mpath)
+        return np.asarray(_imread(ipath)), np.asarray(_imread(mpath)).astype(np.int32)
+
+    if not ipath.exists():
+        raise FileNotFoundError(ipath)
+    blob = np.load(ipath, allow_pickle=True).item()
+    if "masks" not in blob:
+        raise KeyError(f"{ipath.name} has no 'masks' key (keys: {sorted(blob)})")
+    mask = np.asarray(blob["masks"]).astype(np.int32)
+
+    if "img" in blob:
+        return np.asarray(blob["img"]), mask
+
+    found = find_image_for_seg(ipath, blob, nm_root)
+    if found is None:
+        raise FileNotFoundError(
+            f"{ipath.name} stores no image (Cellpose >=3 drops it) and no matching "
+            f"image file was found next to it or under the cohort. "
+            f"Recorded filename was {blob.get('filename', '<none>')!r}."
+        )
+    return np.asarray(_imread(found)), mask
 
 
 def resolve_row(nm_root: Path, row: dict):
@@ -80,31 +202,40 @@ def load_manifest(csv_path, nm_root, cache_dir=None, service=None):
         rows = list(csv.DictReader(fh))
     print(f"  Manifest: {csv_path.name}  ({len(rows)} rows)  reading from {nm_root}")
 
-    images, labels, missing = [], [], 0
+    images, labels = [], []
+    failures: list[str] = []
     for i, r in enumerate(rows, 1):
-        ipath, mpath, is_npy = _resolve(nm_root, r)
         try:
-            if is_npy:
-                if not ipath.exists():
-                    raise FileNotFoundError(ipath)
-                d = np.load(ipath, allow_pickle=True).item()
-                img, msk = d["img"], d["masks"]
-            else:
-                if not (ipath.exists() and mpath.exists()):
-                    raise FileNotFoundError(ipath if not ipath.exists() else mpath)
-                img, msk = _imread(ipath), _imread(mpath)
-            images.append(np.asarray(img))
-            labels.append(np.asarray(msk).astype(np.int32))
+            img, msk = load_pair(nm_root, r)
+            images.append(img)
+            labels.append(msk)
         except Exception as e:
-            missing += 1
-            print(f"    [skip {i}] {r.get('image_name','?')}: {type(e).__name__} {e}")
+            failures.append(f"{r.get('image_name', '?')}: {type(e).__name__} {e}")
         if i % 20 == 0:
             print(f"    ...processed {i}/{len(rows)}")
 
-    print(f"  Loaded {len(images)} pairs from {csv_path.name}"
-          + (f"  ({missing} skipped)" if missing else ""))
+    n_bad = len(failures)
+    print(f"  Loaded {len(images)}/{len(rows)} pairs from {csv_path.name}"
+          + (f"  ({n_bad} unreadable)" if n_bad else ""))
+    for line in failures[:10]:
+        print(f"    [skip] {line}")
+    if n_bad > 10:
+        print(f"    ... and {n_bad - 10} more")
+
     if not images:
         raise RuntimeError(
             f"No pairs loaded from {csv_path.name}. Check data.nmslices_root in params.yaml "
             f"(currently {nm_root}) points at the mounted NM_Slices folder.")
+
+    # Refuse to train on a silently halved dataset. This exact failure — newer
+    # Cellpose .npy files not embedding the image — cost ~680 of 1,386 training
+    # rows while every report still said 1,386. A run that quietly drops half its
+    # data is not a run you can compare against anything.
+    if n_bad > max(5, 0.05 * len(rows)):
+        raise RuntimeError(
+            f"{n_bad}/{len(rows)} rows in {csv_path.name} could not be loaded "
+            f"({n_bad / len(rows):.0%}). Refusing to train on a dataset this much "
+            f"smaller than the manifest claims — the metrics would describe "
+            f"something other than the recorded dataset_hash. See the skips above."
+        )
     return images, labels

@@ -46,7 +46,7 @@ def _load_pairs(cfg: Config, split: str, limit: int | None) -> list[tuple[dict, 
     Deliberately not the bulk loader used for training: the test split is 55 GiB
     and we only need one image in memory at a time to score it.
     """
-    from .manifest import _imread, resolve_row
+    from .manifest import load_pair
 
     manifest = cfg.repo_manifest(split)
     if not manifest.exists():
@@ -60,17 +60,12 @@ def _load_pairs(cfg: Config, split: str, limit: int | None) -> list[tuple[dict, 
 
     out = []
     for row in rows:
-        ipath, mpath, is_npy = resolve_row(cfg.nmslices_root, row)
         try:
-            if is_npy:
-                blob = np.load(ipath, allow_pickle=True).item()
-                image, mask = blob["img"], blob["masks"]
-            else:
-                image, mask = _imread(ipath), _imread(mpath)
+            image, mask = load_pair(cfg.nmslices_root, row)
         except Exception as exc:
             print(f"    [skip] {row.get('image_name', '?')}: {type(exc).__name__} {exc}")
             continue
-        out.append((row, np.asarray(image), np.asarray(mask).astype(np.int32)))
+        out.append((row, image, mask))
     return out
 
 
