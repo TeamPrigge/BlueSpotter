@@ -167,6 +167,33 @@ stages:
           cache: false
     desc: Fine-tune Cellpose-SAM; logs to MLflow and writes metrics for DVC.
 
+  # 6. Score the trained model on the held-out split.
+  #    Training loss says the optimiser works. This says whether the model is any
+  #    good — precision, recall and cell-count bias against human-drawn masks,
+  #    broken down per animal so a single mean cannot hide one failing cohort.
+  #    Needs a GPU, so it runs in Colab alongside `train`.
+  evaluate:
+    cmd: PYTHONPATH=src python -m bluespotter.evaluate --split test
+    deps:
+      - data/manifests/test.csv
+      - data/index/test_index.csv
+      - src/bluespotter/evaluate.py
+      - src/bluespotter/metrics.py
+      - src/bluespotter/manifest.py
+      - reports/train_metrics.json
+    params:
+      - model.name
+    metrics:
+      - reports/segmentation_metrics.json:
+          cache: false
+    outs:
+      - reports/segmentation_detail.json:
+          cache: false
+    plots:
+      - reports/pr_curve.csv:
+          cache: false
+    desc: Segment the held-out split and score precision/recall/AP against truth.
+
 # Plot definitions live at the top level because a single plot draws two columns
 # (train vs test loss) from one CSV, which the inline stage form cannot express.
 # View with:  dvc plots show    /  compare revisions with:  dvc plots diff
@@ -179,3 +206,18 @@ plots:
           - train_loss
           - test_loss
       title: Cellpose-SAM fine-tuning loss
+
+  # Precision and recall against the IoU threshold. This is the honest curve for
+  # instance segmentation — ROC would need true negatives, and in a task whose
+  # negative class is "every region that is not a cell" the false-positive rate
+  # is meaningless. The slope here answers a real question: are the outlines
+  # good, or merely in the right place?
+  - segmentation_quality:
+      template: linear
+      x: iou_threshold
+      y:
+        reports/pr_curve.csv:
+          - precision
+          - recall
+          - f1
+      title: Held-out precision / recall vs IoU threshold

@@ -25,9 +25,38 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install pytest pyyaml
+      - run: pip install pytest pyyaml numpy
       - name: Run tests
         run: python -m pytest tests/ -v
+
+  assertions:
+    name: Model quality assertions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pytest pyyaml numpy
+
+      - name: Scoring logic is correct
+        # Runs for real, on the committed fixtures in assertions/. No GPU, no
+        # Drive, no model. This is what makes the gate below trustworthy: a
+        # quality check with a bug in its arithmetic is worse than none, because
+        # it gets believed.
+        run: PYTHONPATH=src python -m pytest tests/test_metrics.py tests/test_assertions.py -v
+
+      - name: Model still clears the quality bar
+        # CI cannot re-segment 248 held-out slices — no GPU, no access to the
+        # images. So it checks the numbers Colab last recorded, and refuses them
+        # if they were computed against a dataset the repo no longer pins. That
+        # staleness check is the point: it closes the gap where training code
+        # changes, nobody re-evaluates, and the build goes green on numbers
+        # describing a model that no longer exists.
+        run: |
+          PYTHONPATH=src python -m bluespotter.quality_gate --allow-missing \
+            >> $GITHUB_STEP_SUMMARY || exit 1
 
   dvc:
     name: DVC pipeline integrity

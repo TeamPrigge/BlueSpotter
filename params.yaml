@@ -86,6 +86,32 @@ train:
   # a reflection, so this doubles the in-memory training set up front.
   augment_hflip: false
 
+# Minimum quality the model must clear before a push is allowed through.
+#
+# CI cannot recompute these — no GPU, no Drive. What it does is check the numbers
+# Colab last recorded in reports/segmentation_metrics.json, and refuse them if
+# they describe a dataset the repo no longer pins. That freshness check is the
+# important half: stale metrics are how a model quietly gets worse while the
+# build stays green.
+#
+# Leave `enabled: false` until the first real evaluation has run, then set the
+# thresholds a little below what you actually measured — a gate is there to catch
+# regression, not to certify the current number as good.
+quality_gate:
+  enabled: false
+  f1:
+    metric: f1@0.5          # found it, and the outline is roughly right
+    min: 0.70
+  recall:
+    metric: recall@0.5      # a missed neuron is worse than a spurious one here:
+    min: 0.75               # under-counting biases every downstream comparison
+  count_bias:
+    metric: count_bias_pct  # systematic over/under-counting, in percent
+    max: 10.0
+  worst_animal:
+    metric: worst_mouse_f1@0.5   # the mean can look fine while one cohort fails
+    min: 0.55
+
 mlflow:
   experiment_name: bluespotter-lc-segmentation
 
