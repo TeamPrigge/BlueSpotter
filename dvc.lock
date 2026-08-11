@@ -5,8 +5,8 @@ stages:
     deps:
     - path: reports/discovery.json
       hash: md5
-      md5: 43f40cea04869403cb6bbddb6d8089cb
-      size: 2013
+      md5: 5d0a35393ecd0aca37f022d393c4c3a2
+      size: 60
     - path: src/bluespotter/manifest_sync.py
       hash: md5
       md5: 75110484dbef219914a151a523b5cd8f
@@ -127,22 +127,22 @@ stages:
     deps:
     - path: src/bluespotter/discover.py
       hash: md5
-      md5: 3eccfef7425bcb29af9b684645a19478
-      size: 16456
+      md5: 42b13a3cfd0e501bd85696a9fe3fa4df
+      size: 18469
     - path: src/bluespotter/naming.py
       hash: md5
-      md5: fc4da5ddd5ad5118d0a25d0432f44200
-      size: 9048
+      md5: d19508555f743826f733464479f6e1da
+      size: 7548
     params:
       params.yaml:
         data.nmslices_root: /content/drive/MyDrive/TeamPrigge/Data/NM_Slices
         data.test_split: 0.15
-        dvc.discover: true
+        dvc.discover: false
     outs:
     - path: reports/discovery.json
       hash: md5
-      md5: 43f40cea04869403cb6bbddb6d8089cb
-      size: 2013
+      md5: 5d0a35393ecd0aca37f022d393c4c3a2
+      size: 60
   index-ap:
     cmd: PYTHONPATH=src python -m bluespotter.drive_index --split ap_position
     deps:
