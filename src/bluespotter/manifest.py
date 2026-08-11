@@ -248,11 +248,15 @@ def _imread(path: Path):
     return imread(str(path))
 
 
-def load_manifest(csv_path, nm_root, cache_dir=None, service=None):
+def load_manifest(csv_path, nm_root, cache_dir=None, service=None, limit=None):
     """Return (images, labels) lists ready for cellpose.train.train_seg.
 
     csv_path : mounted-Drive path to train.csv / test.csv
     nm_root  : mounted-Drive path to .../Data/NM_Slices
+    limit    : load at most this many rows. For smoke runs only — every image is
+               held in RAM at once, so the full manifest needs far more memory
+               than any Colab runtime has. A limited run proves the loop works;
+               it does not produce a model worth registering.
     """
     csv_path, nm_root = Path(csv_path), Path(nm_root)
     if not csv_path.exists():
@@ -260,6 +264,16 @@ def load_manifest(csv_path, nm_root, cache_dir=None, service=None):
 
     with open(csv_path, newline="") as fh:
         rows = list(csv.DictReader(fh))
+    n_total = len(rows)
+    if limit is not None and limit < n_total:
+        # Stride rather than take the head: manifests are written grouped by
+        # animal, so the first N rows would be one or two mice and a smoke run
+        # would tell you nothing about whether the loader copes with the range
+        # of cohorts, scanners and mask conventions.
+        step = n_total / limit
+        rows = [rows[int(i * step)] for i in range(limit)]
+        print(f"  LIMITED RUN: {limit} of {n_total} rows, evenly spaced "
+              f"(not a releasable model)")
     print(f"  Manifest: {csv_path.name}  ({len(rows)} rows)  reading from {nm_root}")
 
     images, labels = [], []

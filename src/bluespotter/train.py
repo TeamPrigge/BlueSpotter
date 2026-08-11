@@ -57,7 +57,8 @@ def _split(images, labels, test_split: float):
     return tr_x, tr_y, va_x, va_y
 
 
-def run(cfg: Config | None = None) -> Path:
+def run(cfg: Config | None = None, limit: int | None = None,
+        n_epochs: int | None = None) -> Path:
     cfg = cfg or load_config()
     io.logger_setup()
 
@@ -74,6 +75,12 @@ def run(cfg: Config | None = None) -> Path:
         print(f"  Could not query torch/GPU: {e}")
 
     # ---- STEP 2: data -------------------------------------------------------
+    if n_epochs is not None:
+        # Mutate the config rather than passing it down, so the banner, the
+        # train_seg call and the MLflow params all report the same number. A run
+        # logged with epochs=100 that actually did 2 is worse than no log.
+        cfg.train["n_epochs"] = n_epochs
+
     if cfg.use_manifest:
         _banner("2/5", "Data: load image/mask pairs from manifest (train.csv / test.csv)")
         from .manifest import load_manifest
@@ -87,8 +94,10 @@ def run(cfg: Config | None = None) -> Path:
         print(f"  Image source   : {cfg.nmslices_root}")
         print(f"  Version pinned : {pinned}"
               + ("" if pinned else "   <-- run `dvc repro sync-manifests` to pin this run"))
-        images, labels = load_manifest(train_mf, cfg.nmslices_root)
-        test_images, test_labels = load_manifest(test_mf, cfg.nmslices_root)
+        images, labels = load_manifest(train_mf, cfg.nmslices_root, limit=limit)
+        test_images, test_labels = load_manifest(
+            test_mf, cfg.nmslices_root,
+            limit=max(2, limit // 4) if limit else None)
     else:
         _banner("2/5", "Data: cache from Drive folder -> local disk, then load pairs")
         print(f"  Drive data dir : {cfg.data_dir}")
@@ -142,6 +151,14 @@ def run(cfg: Config | None = None) -> Path:
         mlflow.log_param("n_train", len(images))
         mlflow.log_param("n_test", len(test_images))
         mlflow.log_param("gpu", gpu)
+        # Mark smoke runs in the UI. A limited run trains on a fraction of the
+        # manifest while log_data_provenance() still stamps it with the full
+        # dataset_hash, so without this tag it is indistinguishable from a real
+        # one six months later — and it must never be the model that gets
+        # registered or gates a release.
+        mlflow.set_tag("smoke_run", limit is not None)
+        if limit is not None:
+            mlflow.log_param("limit", limit)
         # How much of what we trained on was real and how much was generated —
         # without this, two runs with very different effective dataset sizes
         # would be indistinguishable in the MLflow UI.
@@ -229,5 +246,18 @@ def run(cfg: Config | None = None) -> Path:
     return drive_model
 
 
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Fine-tune Cellpose-SAM on the LC dataset.")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="train on at most N images (smoke run; not releasable)")
+    ap.add_argument("--epochs", type=int, default=None,
+                    help="override train.n_epochs from params.yaml")
+    args = ap.parse_args(argv)
+    run(limit=args.limit, n_epochs=args.epochs)
+    return 0
+
+
 if __name__ == "__main__":
-    run()
+    raise SystemExit(main())
