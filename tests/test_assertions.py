@@ -36,9 +36,12 @@ def _contract() -> dict:
 
 def _cases():
     """Yield (case, image, masks) for every committed crop."""
+    from skimage.io import imread
+
     for case in _contract()["cases"]:
-        blob = np.load(ASSERTIONS / f"{case['name']}.npz")
-        yield case, blob["image"], blob["masks"].astype(np.int32)
+        image = imread(str(ASSERTIONS / f"{case['name']}_image.png"))
+        masks = imread(str(ASSERTIONS / f"{case['name']}_masks.png")).astype(np.int32)
+        yield case, image, masks
 
 
 @_NO_SET
@@ -57,7 +60,7 @@ def test_the_set_stays_small_enough_to_live_in_git():
     # Real image data in git is a deliberate, bounded exception to the project
     # rule. Bounded is the operative word: if this grows it has stopped being an
     # assertion set and become a dataset, and belongs back on Drive.
-    total = sum(p.stat().st_size for p in ASSERTIONS.glob("*.npz"))
+    total = sum(p.stat().st_size for p in ASSERTIONS.glob("*.png"))
     assert total < 20_000_000, f"assertion set is {total / 1e6:.1f} MB — too big for git"
 
 
@@ -70,6 +73,12 @@ def test_the_set_covers_more_than_one_animal_and_includes_a_background_crop():
     assert len(mice) >= 2, f"only {len(mice)} animal(s) in the assertion set"
     assert any(c["n_cells"] == 0 for c in contract["cases"]), \
         "no background crop — hallucination cannot be detected"
+
+    # Both crop kinds must be present: a detail window tests boundary accuracy on
+    # touching somata, a whole-LC view tests shape and total count. Neither
+    # substitutes for the other.
+    kinds = {c["kind"] for c in contract["cases"]}
+    assert {"detail", "whole_lc"} <= kinds, f"missing crop kinds, have {kinds}"
 
 
 @_NO_SET

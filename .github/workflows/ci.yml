@@ -47,6 +47,35 @@ jobs:
         # it gets believed.
         run: PYTHONPATH=src python -m pytest tests/test_metrics.py tests/test_assertions.py -v
 
+      - name: Publish the quality summary
+        # The numbers and a link to the pictures, on the Actions summary page, so
+        # a reviewer does not have to clone the branch to see how the model did.
+        run: |
+          python - <<'PY' >> $GITHUB_STEP_SUMMARY
+          import json, pathlib
+          m = pathlib.Path("reports/segmentation_metrics.json")
+          if not m.exists():
+              print("### Model quality\n\n_No evaluation committed yet._")
+              raise SystemExit
+          d = json.loads(m.read_text())
+          print("### Model quality — held-out split\n")
+          print(f"Model `{d.get('model','?')}` on `{d.get('n_images','?')}` images, "
+                f"`{d.get('n_true_total','?')}` labelled cells.\n")
+          print("| IoU | precision | recall | F1 | AP |")
+          print("|---|---:|---:|---:|---:|")
+          for t in ("0.5", "0.75", "0.9"):
+              if f"precision@{t}" in d:
+                  print(f"| {t} | {d[f'precision@{t}']:.3f} | {d[f'recall@{t}']:.3f} "
+                        f"| {d[f'f1@{t}']:.3f} | {d[f'ap@{t}']:.3f} |")
+          print(f"\nCell-count bias **{d.get('count_bias_pct', 0):+.1f}%**. "
+                f"Weakest animal `{d.get('worst_mouse','?')}` "
+                f"(F1 {d.get('worst_mouse_f1@0.5', float('nan')):.3f}).\n")
+          sha = "${{ github.sha }}"
+          if pathlib.Path("reports/QUALITY.md").exists():
+              print(f"[Visual review — image / ground truth / prediction]"
+                    f"(../blob/{sha}/reports/QUALITY.md)")
+          PY
+
       - name: Model still clears the quality bar
         # CI cannot re-segment 248 held-out slices — no GPU, no access to the
         # images. So it checks the numbers Colab last recorded, and refuses them

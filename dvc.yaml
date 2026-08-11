@@ -194,6 +194,25 @@ stages:
           cache: false
     desc: Segment the held-out split and score precision/recall/AP against truth.
 
+  # 7. Render the assertion crops with their ground-truth and predicted outlines.
+  #    F1 = 0.83 does not say *how* the model is wrong, and fusing touching somata
+  #    versus inventing cells in background cost the same F1 while needing
+  #    opposite fixes. reports/QUALITY.md renders on GitHub, so a pull request
+  #    shows what changed, not merely that something did.
+  render:
+    cmd: PYTHONPATH=src python -m bluespotter.render
+    deps:
+      - assertions/expected.json
+      - src/bluespotter/render.py
+      - src/bluespotter/metrics.py
+      - reports/segmentation_metrics.json
+    outs:
+      - reports/QUALITY.md:
+          cache: false
+      - reports/figures:
+          cache: false
+    desc: Render image / ground-truth / prediction panels for visual review.
+
 # Plot definitions live at the top level because a single plot draws two columns
 # (train vs test loss) from one CSV, which the inline stage form cannot express.
 # View with:  dvc plots show    /  compare revisions with:  dvc plots diff
