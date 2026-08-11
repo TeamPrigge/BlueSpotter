@@ -224,6 +224,15 @@ def build(manifest: Path, nm_root: Path, out_dir: Path, n: int = 20,
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # data/ is gitignored, so a fresh clone or a restarted Colab session has no
+    # manifests until sync-manifests has run. Say that, rather than leaving a
+    # bare path and a puzzle.
+    if not Path(manifest).exists():
+        raise FileNotFoundError(
+            f"{manifest} not found. The manifests live on Drive and are copied in "
+            f"by the sync-manifests stage, which has not run in this session:\n"
+            f"    dvc repro sync-manifests")
+
     with open(manifest, newline="") as fh:
         rows = list(csv.DictReader(fh))
 

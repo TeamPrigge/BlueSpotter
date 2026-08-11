@@ -171,3 +171,60 @@ def test_load_manifest_tolerates_a_couple_of_bad_rows(nm_root, tmp_path):
 
     images, labels = load_manifest(manifest, nm_root)
     assert len(images) == len(labels) == 39
+
+
+# --- Colab Drive mount drops mid-read --------------------------------------- #
+
+def test_a_dropped_mount_is_retried_after_a_remount(nm_root, monkeypatch):
+    # The real failure: Colab's FUSE mount dies under sustained reads of large
+    # files. Every path after the first failure returns errno 107, so without a
+    # retry one blip silently discards the rest of the dataset — and the run
+    # still reports a number, computed on whatever it read before the mount died.
+    from bluespotter import manifest
+
+    d = nm_root / LOW / "masks" / "npy_masks"
+    np.save(d / "flaky_seg.npy", {"img": np.zeros((10, 10), np.uint8),
+                                  "masks": _masks()}, allow_pickle=True)
+
+    calls = {"n": 0}
+    real_inner = manifest._load_pair_inner
+
+    def flaky(nm, row):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError(107, "Transport endpoint is not connected")
+        return real_inner(nm, row)
+
+    monkeypatch.setattr(manifest, "_load_pair_inner", flaky)
+    monkeypatch.setattr(manifest, "_remount_drive", lambda: True)
+
+    _img, msk = manifest.load_pair(nm_root, _row("flaky_seg.npy"))
+    assert calls["n"] == 2                       # failed once, then succeeded
+    assert set(np.unique(msk)) == {0, 1, 2}
+
+
+def test_a_real_missing_file_is_not_retried(nm_root, monkeypatch):
+    # Only mount failures deserve a remount. Retrying a genuine ENOENT would
+    # hide a broken manifest behind a slow loop.
+    from bluespotter import manifest
+
+    remounts = {"n": 0}
+    monkeypatch.setattr(manifest, "_remount_drive",
+                        lambda: remounts.__setitem__("n", remounts["n"] + 1) or True)
+
+    with pytest.raises(FileNotFoundError):
+        manifest.load_pair(nm_root, _row("nope_seg.npy"))
+    assert remounts["n"] == 0
+
+
+def test_giving_up_when_the_remount_fails(nm_root, monkeypatch):
+    from bluespotter import manifest
+
+    def always_dead(nm, row):
+        raise OSError(107, "Transport endpoint is not connected")
+
+    monkeypatch.setattr(manifest, "_load_pair_inner", always_dead)
+    monkeypatch.setattr(manifest, "_remount_drive", lambda: False)
+
+    with pytest.raises(OSError, match="Transport endpoint"):
+        manifest.load_pair(nm_root, _row("x_seg.npy"))

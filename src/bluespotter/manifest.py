@@ -24,6 +24,7 @@ without telling you is worse than one that fails.
 """
 from __future__ import annotations
 
+import contextlib
 import csv
 from pathlib import Path
 
@@ -34,6 +35,34 @@ _ED_COHORT = "NM_hightiter_histology_brains_ED"
 _LOW_COHORT = "NM_lowtiter_histology_brains"
 
 _IMAGE_EXTS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
+
+# Colab's FUSE Drive mount drops under sustained reads of large files — it comes
+# back as OSError 107, "Transport endpoint is not connected", and every
+# subsequent path fails until it is remounted. Our .npy slices are 200-500 MB
+# each, so a run that touches a few dozen of them will hit this. Remounting and
+# retrying the file recovers it; without this a single blip discards the rest of
+# the dataset and the run reports a number that describes whatever it managed to
+# read before the mount died.
+_MOUNT_ERRNOS = {107, 5, 103}   # not connected, I/O error, connection aborted
+
+
+def _remount_drive() -> bool:
+    """Best effort remount of the Colab Drive mount. False if not in Colab."""
+    try:
+        from google.colab import drive  # type: ignore
+    except ImportError:
+        return False
+    with contextlib.suppress(Exception):   # already broken is fine
+        drive.flush_and_unmount()
+    try:
+        drive.mount("/content/drive", force_remount=True)
+        return True
+    except Exception:
+        return False
+
+
+def _is_mount_failure(exc: BaseException) -> bool:
+    return isinstance(exc, OSError) and exc.errno in _MOUNT_ERRNOS
 
 # name -> path index per cohort, built once on demand. Walking a Drive mount is
 # slow, so we pay for it at most once per cohort per process.
@@ -106,14 +135,30 @@ def find_image_for_seg(npy_path: Path, blob: dict, nm_root: Path) -> Path | None
     return None
 
 
-def load_pair(nm_root: Path, row: dict) -> tuple[np.ndarray, np.ndarray]:
+def load_pair(nm_root: Path, row: dict, _retry: bool = True) -> tuple[np.ndarray, np.ndarray]:
     """Return (image, mask) for one manifest row. Raises if either is unusable.
 
     The single place that knows how to turn a row into pixels — training,
     evaluation and the assertion builder all go through here, so a format
     surprise like the missing `img` key can only ever be fixed once.
+
+    Retries once through a Drive remount if the mount drops mid-read.
     """
     nm_root = Path(nm_root)
+    try:
+        return _load_pair_inner(nm_root, row)
+    except OSError as exc:
+        if not (_retry and _is_mount_failure(exc)):
+            raise
+        print(f"    [drive] mount lost ({exc.errno}) — remounting and retrying "
+              f"{row.get('image_name', '?')}")
+        _NAME_INDEX.clear()          # the cached paths are stale after a remount
+        if not _remount_drive():
+            raise
+        return load_pair(nm_root, row, _retry=False)
+
+
+def _load_pair_inner(nm_root: Path, row: dict) -> tuple[np.ndarray, np.ndarray]:
     ipath, mpath, is_npy = resolve_row(nm_root, row)
 
     if not is_npy:
