@@ -57,7 +57,10 @@ from typing import Any
 import numpy as np
 
 DETAIL_PX = 384       # native-resolution window
-MAX_PX = 640          # longest side of a downscaled whole-LC view
+MAX_PX = 640          # preferred longest side of a downscaled whole-LC view
+HARD_MAX_PX = 1600    # but never shrink so far that somata stop being resolvable
+MIN_SCALE = 0.25      # a 20 px soma must survive as >= 5 px, or the case is
+                      # unsegmentable by anything and tests nothing
 MIN_CELLS = 5         # below this a crop is too noisy to assert on
 PAD = 0.12            # fraction of the LC bounding box added as context
 
@@ -185,7 +188,15 @@ def whole_lc_crop(image: np.ndarray, mask: np.ndarray):
 
     img_c = image[y0:y1, x0:x1]
     msk_c = mask[y0:y1, x0:x1]
-    img_s, msk_s, scale = downscale(img_c, msk_c, MAX_PX)
+
+    # Fitting a 10,000 px slice into 640 px is a x0.06 shrink, which turns a
+    # 20 px soma into one pixel. The resulting case would fail for every model
+    # that will ever exist and tell you nothing about any of them. So the target
+    # size is whichever is larger: the preferred width, or the width that keeps
+    # the scale at MIN_SCALE — capped so the file stays small enough for git.
+    longest = max(msk_c.shape[:2])
+    target = min(HARD_MAX_PX, max(MAX_PX, int(longest * MIN_SCALE)))
+    img_s, msk_s, scale = downscale(img_c, msk_c, target)
     # Renumber after scaling: a cell that shrank below a pixel is genuinely gone
     # and must not be counted as ground truth the model is expected to find.
     return img_s, _renumber(msk_s), scale
