@@ -86,3 +86,30 @@ def test_left_right_spellings_all_normalise():
         "DHC_0464_02.vsi - ap2_TH_left_seg.npy",
     )}
     assert sides == {"L"}
+
+
+# --- Conventions found by the first real run against Drive ------------------ #
+
+def test_non_dhc_animal_prefixes_are_read():
+    # DBT is a different breeding line. Hardcoding DHC made 200+ labelled files
+    # invisible on the first real run.
+    p = parse("TH_DBT-0033-5.70_R_seg.npy")
+    assert p.kind == "ap_mm"
+    assert (p.mouse, p.channel, p.side) == ("DBT-0033", "TH", "R")
+    assert p.ap_mm == pytest.approx(-5.70)
+
+
+def test_same_number_under_different_prefixes_stays_two_animals():
+    # If DBT-0033 and DHC-0033 collapsed to one ID they would be treated as one
+    # animal, and the leave-mice-out split would leak between them.
+    assert parse("TH_DBT-0033-5.70_R_seg.npy").mouse != \
+           parse("TH_DHC-0033-5.70_R_seg.npy").mouse
+
+
+def test_channel_first_slice_names_with_hyphens():
+    # Ernesto's retro-brain folders write TH-DHC-1142_slice2-R: channel first,
+    # hyphens where the other cohorts use underscores.
+    p = parse("TH-DHC-1142_slice2-R_seg.npy")
+    assert p.kind == "slice_index"
+    assert (p.mouse, p.channel, p.slice, p.side) == ("DHC-1142", "TH", "slice2", "R")
+    assert not p.has_ap

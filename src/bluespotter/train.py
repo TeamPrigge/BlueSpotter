@@ -110,6 +110,18 @@ def run(cfg: Config | None = None) -> Path:
         raise RuntimeError("No training images found. Check params.yaml paths "
                            "and the *_img/_masks filters.")
 
+    # Augment the TRAIN set only. Augmenting the held-out set would mean scoring
+    # the model on images it effectively trained on, and would make the test
+    # loss incomparable to every previous run.
+    from .augment import apply as _augment
+
+    images, labels, aug_info = _augment(
+        images, labels, hflip=bool(cfg.train.get("augment_hflip", False)))
+    if aug_info["augment_hflip"]:
+        print(f"  Augmentation    : horizontal flip  "
+              f"({aug_info['n_train_real']} -> "
+              f"{aug_info['n_train_after_augment']} training images)")
+
     # ---- STEP 3: MLflow + model --------------------------------------------
     _banner("3/5", "MLflow tracking + load pretrained Cellpose-SAM")
     start_tracking(cfg)
@@ -130,6 +142,11 @@ def run(cfg: Config | None = None) -> Path:
         mlflow.log_param("n_train", len(images))
         mlflow.log_param("n_test", len(test_images))
         mlflow.log_param("gpu", gpu)
+        # How much of what we trained on was real and how much was generated —
+        # without this, two runs with very different effective dataset sizes
+        # would be indistinguishable in the MLflow UI.
+        for k, v in aug_info.items():
+            mlflow.log_param(k, v)
         # Record git commit + DVC dataset hashes so this run can be traced back
         # to the exact bytes it trained on.
         log_data_provenance(cfg)

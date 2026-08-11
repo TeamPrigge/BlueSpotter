@@ -144,3 +144,25 @@ def test_dry_run_writes_nothing(nm_root, tmp_path):
 def test_missing_mount_fails_loudly(tmp_path):
     with pytest.raises(FileNotFoundError, match="Mount Drive first"):
         walk(tmp_path / "nope")
+
+
+def test_manifests_go_to_their_configured_paths(nm_root, tmp_path):
+    # The three manifests live in three different Drive folders. Writing them
+    # all next to train.csv left the real test.csv untouched on the first live
+    # run: train was rebuilt from 1600 pairs while test stayed at the old 15,
+    # and the resulting "leakage" warnings were pure artefact.
+    paths = {
+        "train": tmp_path / "training_data" / "train.csv",
+        "test": tmp_path / "test_data" / "test.csv",
+        "ap": tmp_path / "training_data" / "ap_position.csv",
+    }
+    build(nm_root, out_paths=paths, test_fraction=0.3)
+
+    for p in paths.values():
+        assert p.exists(), f"{p} was not written"
+    assert not (tmp_path / "training_data" / "test.csv").exists()
+
+
+def test_build_requires_a_destination(nm_root):
+    with pytest.raises(ValueError, match="out_dir or out_paths"):
+        build(nm_root)

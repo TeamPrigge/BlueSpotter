@@ -51,10 +51,17 @@ _SIDE_MAP = {
     "r": "R", "right": "R", "rightg": "R",
 }
 
-# 1. TH_DHC-2076-5.35_R  /  HA_DHC_1351-5.30_R
+# Animal-ID prefixes are per-cohort (DHC, DBT, ...) and new ones appear whenever
+# a new breeding line does. Capturing the prefix rather than hardcoding one means
+# a new line costs nothing — and, critically, keeps DBT-0033 distinct from
+# DHC-0033. Collapsing those would merge two different animals into one group and
+# quietly break the leave-mice-out split.
+_ID = r"(?P<strain>[A-Z]{2,4})[_-](?P<mouse>\d{3,4})"
+
+# 1. TH_DHC-2076-5.35_R  /  HA_DHC_1351-5.30_R  /  TH_DBT-0033-5.70_R
 _AP_MM = re.compile(
     r"^(?P<channel>[A-Za-z0-9]+)"
-    r"[_-]DHC[_-](?P<mouse>\d{3,4})"
+    r"[_-]" + _ID +
     r"[-_](?P<ap>\d\.\d{1,2})"
     r"[_ ]+(?P<side>[LRlr]|left|right)\b",
     re.IGNORECASE,
@@ -62,15 +69,23 @@ _AP_MM = re.compile(
 
 # 2. DHC_0464_02.vsi - ap2_TH_left
 _AP_ORDINAL = re.compile(
-    r"^DHC[_-](?P<mouse>\d{3,4})[_-](?P<run>\d+)\.vsi\s*-\s*ap(?P<ap>\d+)"
+    r"^" + _ID + r"[_-](?P<run>\d+)\.vsi\s*-\s*ap(?P<ap>\d+)"
     r"_(?P<channel>[A-Za-z0-9]+)_(?P<side>left|right|[LRlr])",
     re.IGNORECASE,
 )
 
-# 3. DHC_0929_slice4_TH_R
+# 3. DHC_0929_slice4_TH_R  (animal first)
 _SLICE_IDX = re.compile(
-    r"^DHC[_-](?P<mouse>\d{3,4})[_-](?P<slice>slice\d+)"
+    r"^" + _ID + r"[_-](?P<slice>slice\d+)"
     r"_(?P<channel>[A-Za-z0-9]+)_(?P<side>[LRlr]|left|right)\b",
+    re.IGNORECASE,
+)
+
+# 3b. TH-DHC-1142_slice2-R  (channel first, hyphens as separators)
+_SLICE_IDX_CH_FIRST = re.compile(
+    r"^(?P<channel>[A-Za-z0-9]+)[_-]" + _ID +
+    r"[_-](?P<slice>slice\d+)"
+    r"[_-](?P<side>[LRlr]|left|right)\b",
     re.IGNORECASE,
 )
 
@@ -137,6 +152,10 @@ def _norm_channel(raw: str) -> str:
     return raw.strip().upper()
 
 
+def _mouse(m: re.Match[str]) -> str:
+    return f"{m.group('strain').upper()}-{m.group('mouse')}"
+
+
 def parse(name: str) -> Parsed:
     """Parse a file name into `Parsed`. Never raises; unknown -> kind='unknown'."""
     stem, _role = strip_role_suffix(name)
@@ -148,7 +167,7 @@ def parse(name: str) -> Parsed:
         if AP_MM_MIN <= ap <= AP_MM_MAX:
             return Parsed(
                 kind="ap_mm",
-                mouse=f"DHC-{m.group('mouse')}",
+                mouse=_mouse(m),
                 channel=_norm_channel(m.group("channel")),
                 side=_norm_side(m.group("side")),
                 ap_mm=-ap,
@@ -158,21 +177,22 @@ def parse(name: str) -> Parsed:
     if m:
         return Parsed(
             kind="ap_ordinal",
-            mouse=f"DHC-{m.group('mouse')}",
+            mouse=_mouse(m),
             channel=_norm_channel(m.group("channel")),
             side=_norm_side(m.group("side")),
             ap_index=int(m.group("ap")),
         )
 
-    m = _SLICE_IDX.match(stem)
-    if m:
-        return Parsed(
-            kind="slice_index",
-            mouse=f"DHC-{m.group('mouse')}",
-            channel=_norm_channel(m.group("channel")),
-            side=_norm_side(m.group("side")),
-            slice=m.group("slice").lower(),
-        )
+    for pattern in (_SLICE_IDX, _SLICE_IDX_CH_FIRST):
+        m = pattern.match(stem)
+        if m:
+            return Parsed(
+                kind="slice_index",
+                mouse=_mouse(m),
+                channel=_norm_channel(m.group("channel")),
+                side=_norm_side(m.group("side")),
+                slice=m.group("slice").lower(),
+            )
 
     m = _SLIDESCANNER.match(stem)
     if m:

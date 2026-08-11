@@ -36,7 +36,8 @@ dvc:
   # Regenerate the manifests by walking the Drive mount instead of hand-editing
   # them. Off by default so a run on a machine without the mount does not wipe
   # the authored CSVs; turn on in Colab, where NM_Slices is actually present.
-  discover: true
+  discover: false
+
   # --- Where the versioned copies live inside the repo (tracked by DVC) ---
   manifest_dir: data/manifests   # snapshots of train.csv / test.csv from Drive
   index_dir: data/index          # per-file size/mtime/hash index of Drive content
@@ -70,6 +71,20 @@ train:
   batch_size: 1
   nchan: 3
   min_train_masks: 1        # keep crops with >=1 labelled neuron (Cellpose default is 5)
+
+  # Mirror every training image left-right and train on both. The LC is bilateral
+  # and near mirror-symmetric, so a mirrored left LC is a plausible right LC and
+  # the mask stays true. Applied to the TRAIN set only — augmenting the held-out
+  # set would score the model on images it had effectively seen.
+  #
+  # There is deliberately no vertical (dorsoventral) flip. It would put the
+  # fourth ventricle and the dorsal brainstem in impossible places; harmless for
+  # counting cell bodies, but it destroys exactly the orientation signal the
+  # planned anatomical and AP-position models need.
+  #
+  # Cellpose already does random rotate/rescale per batch but exposes no hook for
+  # a reflection, so this doubles the in-memory training set up front.
+  augment_hflip: false
 
 mlflow:
   experiment_name: bluespotter-lc-segmentation

@@ -187,6 +187,14 @@ def walk(nm_root: Path) -> tuple[list[Pair], list[Path]]:
     return pairs, unparsed
 
 
+def _one_per_dir(paths: list[Path], nm_root: Path, limit: int = 30) -> list[str]:
+    """One representative path per directory, so distinct conventions all show."""
+    seen: dict[Path, str] = {}
+    for p in paths:
+        seen.setdefault(p.parent, str(p.relative_to(nm_root)))
+    return list(seen.values())[:limit]
+
+
 def dedupe(pairs: Iterable[Pair]) -> tuple[list[Pair], int]:
     """Collapse copies of the same slice, preferring the canonical folder."""
     best: dict[tuple, Pair] = {}
@@ -290,10 +298,20 @@ def _write(path: Path, fields: tuple[str, ...], rows: list[dict[str, Any]]) -> N
         w.writerows(rows)
 
 
-def build(nm_root: Path, out_dir: Path, test_fraction: float = 0.15,
-          dry_run: bool = False) -> dict[str, Any]:
-    """Discover, split and write the three manifests. Returns a summary dict."""
-    nm_root, out_dir = Path(nm_root), Path(out_dir)
+def build(nm_root: Path, out_dir: Path | None = None, test_fraction: float = 0.15,
+          dry_run: bool = False, out_paths: dict[str, Path] | None = None,
+          ) -> dict[str, Any]:
+    """Discover, split and write the three manifests. Returns a summary dict.
+
+    `out_paths` gives an explicit destination per manifest and takes precedence
+    over `out_dir`. That matters because the three files do *not* live in one
+    folder on Drive — train.csv is under data/training_data/ and test.csv under
+    data/test_data/. Writing all three next to train.csv silently orphaned the
+    new test.csv while `sync-manifests` kept reading the stale one, so train was
+    rebuilt and test was not. Passing the configured paths through removes the
+    chance of that happening again.
+    """
+    nm_root = Path(nm_root)
     pairs, unparsed = walk(nm_root)
     pairs, duplicates = dedupe(pairs)
 
@@ -319,7 +337,13 @@ def build(nm_root: Path, out_dir: Path, test_fraction: float = 0.15,
         "pairs_kept": len(pairs),
         "duplicates_collapsed": duplicates,
         "unparsed_files": len(unparsed),
-        "unparsed_examples": [str(p.relative_to(nm_root)) for p in unparsed[:10]],
+        # One example per directory, not the first N paths. Unparsed files come
+        # in families — a whole folder shares a naming convention — so a flat
+        # head() shows the same mistake ten times and hides the other nine.
+        "unparsed_examples": _one_per_dir(unparsed, nm_root),
+        "unparsed_by_dir": dict(sorted(
+            Counter(str(p.parent.relative_to(nm_root)) for p in unparsed).items(),
+            key=lambda kv: -kv[1])),
         "train_rows": len(train_rows),
         "test_rows": len(test_rows),
         "ap_rows": len(ap_rows),
@@ -335,12 +359,19 @@ def build(nm_root: Path, out_dir: Path, test_fraction: float = 0.15,
         "dry_run": dry_run,
     }
 
+    if out_paths is None:
+        if out_dir is None:
+            raise ValueError("pass either out_dir or out_paths")
+        d = Path(out_dir)
+        out_paths = {"train": d / "train.csv", "test": d / "test.csv",
+                     "ap": d / "ap_position.csv"}
+    summary["destinations"] = {k: str(v) for k, v in out_paths.items()}
+
     if not dry_run:
-        _write(out_dir / "train.csv", MANIFEST_FIELDS, train_rows)
-        _write(out_dir / "test.csv", MANIFEST_FIELDS, test_rows)
-        _write(out_dir / "ap_position.csv", AP_FIELDS, ap_rows)
-        summary["written"] = [str(out_dir / n) for n in
-                              ("train.csv", "test.csv", "ap_position.csv")]
+        _write(out_paths["train"], MANIFEST_FIELDS, train_rows)
+        _write(out_paths["test"], MANIFEST_FIELDS, test_rows)
+        _write(out_paths["ap"], AP_FIELDS, ap_rows)
+        summary["written"] = [str(p) for p in out_paths.values()]
 
     return summary
 
@@ -375,12 +406,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     nm_root = Path(args.nm_root) if args.nm_root else cfg.nmslices_root
-    out_dir = Path(args.out_dir) if args.out_dir else cfg.train_manifest.parent
+
+    # Each manifest goes where params.yaml says it lives — they are in three
+    # different Drive folders, and guessing one folder for all three is what
+    # left a stale test.csv in place on the first real run.
+    if args.out_dir:
+        d = Path(args.out_dir)
+        out_paths = {"train": d / "train.csv", "test": d / "test.csv",
+                     "ap": d / "ap_position.csv"}
+    else:
+        out_paths = {
+            "train": cfg.train_manifest,
+            "test": cfg.test_manifest,
+            "ap": cfg.drive_root / cfg.data["ap_manifest"],
+        }
 
     print(f"[discover] walking {nm_root}")
     summary = build(
         nm_root=nm_root,
-        out_dir=out_dir,
+        out_paths=out_paths,
         test_fraction=float(cfg.data.get("test_split", 0.15)),
         dry_run=args.dry_run,
     )
