@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import gc
 from pathlib import Path
 
 import numpy as np
@@ -170,20 +171,34 @@ def _load_pair_inner(nm_root: Path, row: dict) -> tuple[np.ndarray, np.ndarray]:
 
     if not ipath.exists():
         raise FileNotFoundError(ipath)
+
+    # A Cellpose _seg.npy is a single pickled dict, and `flows` inside it is
+    # full-resolution float32 — several GB on a 10,000 px slice. There is no way
+    # to reach `masks` without unpickling all of it, so the peak is unavoidable;
+    # what we can avoid is *holding* it. On a 12 GB Colab VM the difference
+    # matters more than it sounds: the Drive FUSE daemon is a separate process,
+    # and when the VM runs short the kernel kills it, which surfaces as
+    # OSError 107 on every subsequent path and looks exactly like a flaky mount.
     blob = np.load(ipath, allow_pickle=True).item()
-    if "masks" not in blob:
-        raise KeyError(f"{ipath.name} has no 'masks' key (keys: {sorted(blob)})")
-    mask = np.asarray(blob["masks"]).astype(np.int32)
+    try:
+        if "masks" not in blob:
+            raise KeyError(f"{ipath.name} has no 'masks' key (keys: {sorted(blob)})")
+        mask = np.array(blob["masks"], dtype=np.int32)      # copy, not a view
+        embedded = np.array(blob["img"]) if "img" in blob else None
+        recorded = str(blob.get("filename") or "")
+    finally:
+        del blob
+        gc.collect()
 
-    if "img" in blob:
-        return np.asarray(blob["img"]), mask
+    if embedded is not None:
+        return embedded, mask
 
-    found = find_image_for_seg(ipath, blob, nm_root)
+    found = find_image_for_seg(ipath, {"filename": recorded}, nm_root)
     if found is None:
         raise FileNotFoundError(
             f"{ipath.name} stores no image (Cellpose >=3 drops it) and no matching "
             f"image file was found next to it or under the cohort. "
-            f"Recorded filename was {blob.get('filename', '<none>')!r}."
+            f"Recorded filename was {recorded or '<none>'!r}."
         )
     return np.asarray(_imread(found)), mask
 

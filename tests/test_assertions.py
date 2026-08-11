@@ -12,6 +12,7 @@ sample changes the fixtures and not the tests.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -62,6 +63,23 @@ def test_the_set_stays_small_enough_to_live_in_git():
     # assertion set and become a dataset, and belongs back on Drive.
     total = sum(p.stat().st_size for p in ASSERTIONS.glob("*.png"))
     assert total < 20_000_000, f"assertion set is {total / 1e6:.1f} MB — too big for git"
+
+
+def test_review_figures_are_not_committed():
+    # They are a local eyeball check, rewritten on every model change. Committing
+    # them puts 34 MB of derived panels into history per iteration, permanently,
+    # to show something a person looks at once. The numbers CI actually gates on
+    # are in reports/segmentation_metrics.json.
+    figures = Path(__file__).resolve().parents[1] / "reports" / "figures"
+    committed = [p.name for p in figures.glob("*.png")] if figures.is_dir() else []
+    tracked = subprocess.run(
+        ["git", "ls-files", "reports/figures"],
+        cwd=figures.parents[1], capture_output=True, text=True,
+    ).stdout.split()
+    assert not tracked, (
+        f"{len(tracked)} figure(s) are tracked by git — reports/figures is "
+        f"gitignored on purpose; run `git rm -r --cached reports/figures`. "
+        f"(untracked files present locally: {len(committed)}, which is fine)")
 
 
 @_NO_SET

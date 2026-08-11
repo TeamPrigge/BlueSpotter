@@ -40,6 +40,12 @@ from .metrics import match_instances, score_one
 
 FIG_DIR = "figures"
 
+# `reports/figures/` and the QUALITY.md page they belong to are NOT committed —
+# see .gitignore. They are a local eyeball check, regenerated whenever you want
+# one, and 34 MB of derived panels rewritten on every model change has no place
+# in permanent history. What CI needs is the *numbers*, and those live in
+# reports/segmentation_metrics.json, which is committed and gated.
+
 MATCHED = (60, 200, 90)      # green
 INVENTED = (230, 60, 60)     # red
 MISSED = (245, 170, 40)      # amber

@@ -43,3 +43,11 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# --- Local review artefacts ---
+# Rendered assertion panels and the page that embeds them. Regenerated on every
+# model change, so committing them grows history by tens of MB per iteration to
+# show something a person looks at once. The metrics CI gates on are committed:
+# reports/segmentation_metrics.json, reports/validation.json, reports/*_index_summary.json.
+reports/figures/
+reports/QUALITY.md
