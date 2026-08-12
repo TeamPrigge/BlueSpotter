@@ -137,3 +137,20 @@ def test_failures_are_reported_with_a_cause_not_silently_dropped(tree, tmp_path)
     # actionable categories rather than a wall of tracebacks.
     assert set(r["causes"]) == {"ValueError", "FileNotFoundError"}
     assert all(f["mouse"] == "DHC-0464" for f in r["failures"])
+
+
+def test_the_cellpose_get_batch_workaround_is_a_no_op_once_upstream_fixes_it():
+    """The patch must disappear by itself when cellpose grows the parameter.
+
+    A permanent monkeypatch is how you end up silently overriding a real fix
+    years later. This pins that the wrapper checks the signature first.
+    """
+    pytest.importorskip("cellpose")
+    import inspect
+
+    from cellpose import train as cptrain
+
+    from bluespotter.train import _patch_cellpose_get_batch
+
+    already = "channel_axis" in inspect.signature(cptrain._get_batch).parameters
+    assert _patch_cellpose_get_batch() is (not already)

@@ -57,6 +57,49 @@ def _split(images, labels, test_split: float):
     return tr_x, tr_y, va_x, va_y
 
 
+def _patch_cellpose_get_batch() -> bool:
+    """Work around an upstream cellpose bug that breaks all file-based training.
+
+    train_seg builds its per-batch kwargs as
+
+        kwargs = {"normalize_params": ..., "channel_axis": channel_axis}
+
+    but `_get_batch` has never accepted `channel_axis`, so the call raises
+    TypeError on the first batch. The branch is only taken when `normed` is
+    False, and `normed` is only True when `train_data` is not None — i.e. it
+    fires on every lazy/file-based run and never on an in-memory one, which is
+    why nobody upstream trips over it. Present in 4.2.1.1 and still in main as
+    of this writing.
+
+    Dropping the argument is safe *for us* specifically because we never set
+    channel_axis: our cached images are 2D grayscale, and `_reshape_norm`
+    handles those with channel_axis=None. If it is ever non-None the wrapper
+    refuses rather than silently discarding a real setting.
+    """
+    import inspect
+
+    from cellpose import train as _cptrain
+
+    if getattr(_cptrain._get_batch, "_bluespotter_patched", False):
+        return True
+    if "channel_axis" in inspect.signature(_cptrain._get_batch).parameters:
+        return False        # fixed upstream; leave it alone
+
+    original = _cptrain._get_batch
+
+    def _get_batch(*args, channel_axis=None, **kwargs):
+        if channel_axis is not None:
+            raise ValueError(
+                f"cellpose _get_batch cannot take channel_axis={channel_axis!r}; "
+                "BlueSpotter only patches the None case.")
+        return original(*args, **kwargs)
+
+    _get_batch._bluespotter_patched = True
+    _cptrain._get_batch = _get_batch
+    print("  [patch] cellpose _get_batch: dropping unsupported channel_axis kwarg")
+    return True
+
+
 def run(cfg: Config | None = None, limit: int | None = None,
         n_epochs: int | None = None) -> Path:
     cfg = cfg or load_config()
@@ -218,6 +261,9 @@ def run(cfg: Config | None = None, limit: int | None = None,
         # Record git commit + DVC dataset hashes so this run can be traced back
         # to the exact bytes it trained on.
         log_data_provenance(cfg)
+
+        if lazy:
+            _patch_cellpose_get_batch()
 
         # ---- STEP 4: fine-tune ---------------------------------------------
         _banner("4/5", f"Fine-tuning  (run: {run_name})")
