@@ -86,6 +86,24 @@ train:
   # a reflection, so this doubles the in-memory training set up front.
   augment_hflip: false
 
+  # Stream images from disk one batch at a time instead of holding the whole
+  # dataset in RAM. `python -m bluespotter.prepare` writes each slice and its
+  # precomputed flows to local disk once; train_seg then reads only the current
+  # batch (train_files + load_files=False). Peak memory becomes batch_size
+  # images rather than the corpus, which is what makes the full 1,386-slice
+  # manifest trainable at all — eager loading needs well over 100 GB.
+  #
+  # Full images are preserved. Cellpose takes a random rotated/rescaled 256 px
+  # crop per image per batch either way, so nothing about what the network sees
+  # changes; only when the pixels are read.
+  #
+  # Incompatible with augment_hflip, which needs arrays in memory to mirror.
+  lazy: true
+
+  # Where the prepared cache goes. Local disk, never Drive: this is rewritten
+  # freely and read at every batch.
+  cache_dir: /content/bluespotter_cache
+
 # Minimum quality the model must clear before a push is allowed through.
 #
 # CI cannot recompute these — no GPU, no Drive. What it does is check the numbers

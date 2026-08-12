@@ -94,11 +94,46 @@ def run(cfg: Config | None = None, limit: int | None = None,
         print(f"  Image source   : {cfg.nmslices_root}")
         print(f"  Version pinned : {pinned}"
               + ("" if pinned else "   <-- run `dvc repro sync-manifests` to pin this run"))
-        images, labels = load_manifest(train_mf, cfg.nmslices_root, limit=limit)
-        test_images, test_labels = load_manifest(
-            test_mf, cfg.nmslices_root,
-            limit=max(2, limit // 4) if limit else None)
+        lazy = bool(cfg.train.get("lazy", False))
+        if lazy:
+            # Cache image + flows files to local disk once, then let Cellpose
+            # read one batch at a time. Peak RAM becomes batch_size images
+            # instead of the whole corpus, which is the only way the full
+            # 1,386-slice manifest fits on any Colab runtime.
+            from .prepare import cache_dir_for, prepare_split
+            _banner("2/5", "Data: prepare on-disk cache (lazy loading)")
+            device = None
+            if gpu:
+                import torch
+                device = torch.device("cuda")
+            prep = {}
+            for split, mf in (("train", train_mf), ("test", test_mf)):
+                prep[split] = prepare_split(
+                    mf, cfg.nmslices_root, cache_dir_for(cfg, split),
+                    limit=limit if split == "train"
+                    else (max(2, limit // 4) if limit else None),
+                    device=device)
+                r = prep[split]
+                print(f"  {split}: {r['n_usable']}/{r['n_rows']} usable, "
+                      f"{r['n_failed']} failed, {r['cache_gib']} GiB cached")
+                for cause, n in sorted(r["causes"].items(), key=lambda kv: -kv[1]):
+                    print(f"      {n:4d}  {cause}")
+            images = labels = test_images = test_labels = None
+            train_files = prep["train"]["image_files"]
+            train_label_files = prep["train"]["label_files"]
+            test_files = prep["test"]["image_files"]
+            test_label_files = prep["test"]["label_files"]
+            n_train, n_test = len(train_files), len(test_files)
+        else:
+            train_files = train_label_files = test_files = test_label_files = None
+            images, labels = load_manifest(train_mf, cfg.nmslices_root, limit=limit)
+            test_images, test_labels = load_manifest(
+                test_mf, cfg.nmslices_root,
+                limit=max(2, limit // 4) if limit else None)
+            n_train, n_test = len(images), len(test_images)
     else:
+        lazy = False
+        train_files = train_label_files = test_files = test_label_files = None
         _banner("2/5", "Data: cache from Drive folder -> local disk, then load pairs")
         print(f"  Drive data dir : {cfg.data_dir}")
         print(f"  Local cache    : {cfg.local_cache}")
@@ -113,9 +148,11 @@ def run(cfg: Config | None = None, limit: int | None = None,
                   f"{cfg.data['test_split']:.0%} for validation")
             images, labels, test_images, test_labels = _split(
                 images, labels, cfg.data["test_split"])
-    print(f"  Training images : {len(images)}")
-    print(f"  Validation images: {len(test_images)}")
-    if len(images) == 0:
+    if not cfg.use_manifest or not lazy:
+        n_train, n_test = len(images), len(test_images)
+    print(f"  Training images : {n_train}")
+    print(f"  Validation images: {n_test}")
+    if n_train == 0:
         raise RuntimeError("No training images found. Check params.yaml paths "
                            "and the *_img/_masks filters.")
 
@@ -124,8 +161,21 @@ def run(cfg: Config | None = None, limit: int | None = None,
     # loss incomparable to every previous run.
     from .augment import apply as _augment
 
-    images, labels, aug_info = _augment(
-        images, labels, hflip=bool(cfg.train.get("augment_hflip", False)))
+    want_hflip = bool(cfg.train.get("augment_hflip", False))
+    if lazy:
+        # Mirroring works on arrays held in memory, which is exactly what lazy
+        # mode does not have. Refuse rather than silently ignoring the setting:
+        # a run logged as augmented that was not is a corrupted comparison.
+        if want_hflip:
+            raise RuntimeError(
+                "train.augment_hflip and train.lazy cannot both be true. Lazy "
+                "mode streams images from disk, so there is nothing in memory "
+                "to mirror. Cellpose already applies random rotation and "
+                "rescaling per batch; set augment_hflip: false.")
+        aug_info = {"augment_hflip": False, "n_train_real": n_train,
+                    "n_train_after_augment": n_train}
+    else:
+        images, labels, aug_info = _augment(images, labels, hflip=want_hflip)
     if aug_info["augment_hflip"]:
         print(f"  Augmentation    : horizontal flip  "
               f"({aug_info['n_train_real']} -> "
@@ -148,8 +198,9 @@ def run(cfg: Config | None = None, limit: int | None = None,
     run_name = f"{cfg.model['name']}_{_dt.datetime.now():%Y%m%d_%H%M%S}"
     with db_checkpointer, mlflow.start_run(run_name=run_name) as active_run:
         log_params_from_config(cfg)
-        mlflow.log_param("n_train", len(images))
-        mlflow.log_param("n_test", len(test_images))
+        mlflow.log_param("n_train", n_train)
+        mlflow.log_param("n_test", n_test)
+        mlflow.log_param("lazy", lazy)
         mlflow.log_param("gpu", gpu)
         # Mark smoke runs in the UI. A limited run trains on a fraction of the
         # manifest while log_data_provenance() still stamps it with the full
@@ -177,8 +228,13 @@ def run(cfg: Config | None = None, limit: int | None = None,
             model.net,
             train_data=images,
             train_labels=labels,
+            train_files=train_files,
+            train_labels_files=train_label_files,
             test_data=test_images,
             test_labels=test_labels,
+            test_files=test_files,
+            test_labels_files=test_label_files,
+            load_files=not lazy,
             n_epochs=cfg.train["n_epochs"],
             learning_rate=cfg.train["learning_rate"],
             weight_decay=cfg.train["weight_decay"],
