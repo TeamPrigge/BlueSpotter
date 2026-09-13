@@ -70,6 +70,21 @@ src/bluespotter/
   train.py          Cellpose-SAM fine-tuning entry point
   data.py           legacy Drive->local folder caching (only used when use_manifest: false)
   viz.py            LR schedule plot + predicted-vs-GT overlays
+  discover.py       DVC stage: crawl the Drive mount, rebuild all three manifests
+  naming.py         filename -> mouse/channel/side/AP. Generic strain prefix, so
+                    DBT-0033 != DHC-0033. Refuses out-of-range AP rather than guessing.
+  prepare.py        write image + precomputed flows to local disk, resumably, so
+                    training can stream instead of holding the corpus in RAM
+  metrics.py        IoU matching, precision/recall/F1/AP. No ROC: instance
+                    segmentation has no bounded true-negative class.
+  evaluate.py       DVC stage: score the held-out split, one image at a time
+  quality_gate.py   compare metrics to params thresholds; refuse stale metrics
+  make_assertions.py  cut the committed assertion crops from real held-out slices
+  render.py         reports/QUALITY.md: image | ground truth | prediction panels
+  augment.py        horizontal mirror only (no DV flip - it would destroy the
+                    orientation signal the planned AP model needs)
+  scoring_set.py    blind export of the held-out split for human counting
+  ap_scoring.py     AP bins recovered from Csilla's values; weighted-kappa agreement
 notebooks/
   00_data_versioning.ipynb    CPU. DVC pipeline + push to Drive/GitHub. RUN FIRST.
   01_train_cellpose_sam.ipynb GPU. Verifies data version, then trains.
@@ -171,110 +186,189 @@ try, what happened?".
 10. **`dvc metrics show` flattens nested JSON.** Metrics files must be scalar-only;
     the per-mouse breakdown lives in `reports/validation_detail.json`, an output
     rather than a metric.
+12. **Newer Cellpose `_seg.npy` does not embed the image.** Older ones had an
+    `img` key; >=3 records only `filename`, an absolute path on the annotator's
+    machine. The old loader caught the KeyError and printed `[skip]`, so ~680 of
+    1,386 training rows silently vanished while every report still said 1,386.
+    `find_image_for_seg()` resolves it; `load_manifest` now *raises* if more than
+    5% of rows fail rather than training on a quietly halved dataset.
+13. **`OSError 107` from the Drive mount is usually OOM, not flakiness.**
+    `np.load(...).item()` unpickles the whole dict including multi-GB `flows`;
+    on a 12 GB VM the kernel kills the FUSE daemon, and every subsequent path
+    fails identically to a dropped mount. Hence `del blob; gc.collect()`.
+14. **`skimage.io.imsave` silently transposes a leading axis of 4.** A
+    `(4, H, W)` flows array round-trips as `(H, W, 4)`, and cellpose's
+    `io.imread(labels_file)[1:]` then slices the wrong axis and trains on
+    nonsense without raising. `prepare.py` uses `tifffile.imwrite`; a test pins
+    the round-trip shape.
+15. **cellpose `train_seg` passes `channel_axis` to `_get_batch`, which has
+    never accepted it.** Only fires when `normed` is False, i.e. on every
+    file-based run and never on an in-memory one — so it survives upstream
+    (4.2.1.1 and main). `train._patch_cellpose_get_batch()` works around it and
+    becomes a no-op once the signature gains the parameter.
+16. **Do not commit anything under `reports/figures/`.** Regenerated on every
+    model change; 34 MB per render accumulates in history forever. Gitignored,
+    with a test that fails if they are ever tracked again.
+17. **Check for an in-progress rebase before committing.** A paused
+    `git pull --rebase` leaves a detached HEAD with the tree rewound; committing
+    into that silently reverted a fix this session.
+
 11. **`data/*` in `.gitignore`** would swallow DVC metafiles — there are explicit
     negations for `*.dvc` and `.gitignore`. Small committed metrics go to `reports/`.
 
-## 8. Known scientific issue — train/test group leakage
+## 8. Group leakage — FIXED (was the top open item)
 
-`validate` reports this as a **warning**, deliberately. These are the **measured**
-numbers from the first real pipeline run (`reports/validation.json`, commit
-`d91ed5d`), not an estimate:
+The old text here described 8 of 9 test mice also appearing in train. That was
+measured on the 60/15 dataset and is **no longer true**. `discover.py` now
+assigns splits by a deterministic hash of the mouse ID, so an animal lands
+wholly in train or wholly in test.
 
-- **8 of 9 test mice also appear in train**: DHC-0464, 0703, 0893, 0929, 0932, 0934,
-  0935, 0936. Only one test animal is genuinely unseen.
-- **9 physical sections are split across the two splits** by hemisphere: DHC-0464,
-  DHC-0703, DHC-0893 slice1 + slice2, DHC-0932 slice1, DHC-0934 slice3,
-  DHC-0935 slice4, DHC-0936 slice2 + slice4.
-- 0 identical images in both splits, so there is no outright duplication — the
-  problem is entirely group leakage.
-- 60 train rows / 11 mice, 15 test rows / 9 mice (test fraction 0.20).
+Measured after the rebuild: **0 mice and 0 slices in both splits.**
 
-Why it matters: two sections from one animal share its biology, staining batch and
-imaging session, so a model that has seen one has partly memorised the other.
-Held-out scores therefore measure generalisation to a *new section*, not a *new
-animal*. For a platform whose purpose is cross-laboratory comparability, the honest
-unit of splitting is the **mouse**.
+`dvc.fail_on_group_leak` is still `false` in params.yaml. It can now be flipped
+to `true` — the split has been grouped, so the check should hold rather than
+warn. Do that when convenient.
 
-It is a warning not an error because re-splitting is the user's scientific decision.
-Once a grouped (leave-mice-out) split exists, set `dvc.fail_on_group_leak: true` in
-`params.yaml` and CI will hold the line.
+---
 
-**This has not been fixed. It is the highest-value open item** — with 8 of 9 test
-animals seen during training, the current held-out score would say almost nothing
-about generalisation to a new mouse, which is the claim the platform exists to make.
+## 9. Current state (September 2026)
 
-## 9. Current state (end of the handoff session)
-
-Branch **`feat/dvc-data-versioning`**:
+Branch **`feat/dvc-data-versioning`**, all pushed:
 
 ```
-5ac9a86  Add CLAUDE.md handoff                                       (this file)
-7ddfe99  Make the package installable so notebook shell cells work
-d91ed5d  dvc: refresh dataset index and validation report   <-- pushed BY COLAB
-3e896a0  Make the Colab config check survive an older clone
-dc55514  Add Colab data-versioning notebook so nothing runs locally
-141920b  Move MLflow to a SQLite backend store homed on Drive; add Model Registry
-3db5ff1  Add DVC data versioning over Google Drive + MLflow provenance
+72909a1  AP level scoring, outline subset, reference panel
+1a1b6a7  Export the held-out split for blind human counting
+28d78df  Report image counts from split sizes, not in-memory lists
+55b8fd6  Work around a cellpose bug that breaks file-based training
+30e6e54  Stop plot_predictions loading the whole manifest
+06b6c8f  Train the full dataset by streaming from disk
 ```
 
-- `main` is still at `57a9b69` — it contains **none** of this work. Both notebooks
-  therefore set `BRANCH = 'feat/dvc-data-versioning'`; switch to `'main'` after merge.
-- 52 tests pass, `ruff` clean. Tests use a synthetic Drive tree — no Drive or network
-  needed, so they run anywhere.
+172 tests pass (1 skipped — needs cellpose, which CI does not install).
+`main` still has none of this.
 
-### The data pipeline HAS now run for real
+### Dataset
 
-`00_data_versioning.ipynb` ran end to end in Colab and pushed `d91ed5d` itself, which
-proves the whole cloud-only loop (Drive → index → commit → GitHub) works. Real
-results, from `reports/`:
+| | train | test | AP |
+|---|---|---|---|
+| rows | 1,386 | 248 | 1,443 |
+| dataset_hash | `e1475bd01e2d` | `d3925dd93612` | `a7e8072c2591` |
 
-| | train | test |
-|---|---|---|
-| manifest rows | 60 | 15 |
-| files indexed | 106 | 24 |
-| files missing | **0** | **0** |
-| size | 4.45 GiB | 0.76 GiB |
-| `dataset_hash` | `3cbff8f986d0efba` | `566dcb00498fbf3e` |
+117 animals, 0 files missing, 0 group leakage. Grew from 68 pairs / 11 mice by
+crawling Drive with `discover.py`.
 
-Every one of the 130 Drive files a manifest references resolved — the path logic in
-`manifest.resolve_row()` is correct against the real NM_Slices tree. `hash_mode` was
-`partial`.
+### Training works, on the full dataset
 
-**Still not done:** the legacy `mlruns/` migration (notebook 00 section 6) and any
-GPU training run, so the MLflow SQLite store, Model Registry and provenance tagging
-have been verified against real MLflow 3.14 in a sandbox but never in Colab. Nothing
-has been trained since these changes.
+The blocker was memory: `train.py` held every image in RAM, which for 1,386
+slices of ~10,000 px is well over 100 GB against 83 GB on the largest Colab
+runtime. Fixed by using what cellpose already offers — `train_files` /
+`train_labels_files` with `load_files=False`, so `_get_batch` reads only the
+current batch. Peak RAM is batch size, not corpus size.
 
-**Verified in a sandbox** (synthetic Drive tree + real MLflow 3.14): DVC DAG +
-`repro` + `push`/`pull` round-trip; silent-Drive-edit detection invalidating the train
-stage; missing-file detection; leakage detection; MLflow restore/checkpoint/integrity/
-rotation/WAL/concurrent-write-backup; model registration with provenance tags;
-recovery of runs+registry after deleting the local disk; legacy `mlruns/` migration
-recovering 3 runs; CI scripts in both bootstrap and locked states.
+**Full images are preserved. There is no tiling.** An earlier plan to pre-cut
+tiles was dropped: cellpose takes a random rotated 256 px crop per image per
+batch anyway (`random_rotate_and_resize`, bsize=256), so pre-cutting would fix
+the crop pattern and lose augmentation diversity while buying nothing.
+
+`bluespotter.prepare` writes each image and its precomputed flows to local disk
+once, resumably, and reports unloadable rows grouped by cause.
+
+Verified end to end on an L4: loss 0.2845 -> 0.0778 reading from files, weights
+saved to Drive, registered as `bluespotter-lc` v2, provenance stamped
+(`commit=..., train_hash=e1475bd01e2d`). The MLflow SQLite store and Model
+Registry have now been exercised in Colab, not just in a sandbox.
+
+**Never yet run:** a full-dataset training run. Only smoke runs (60 images).
+
+### Assertion set + CI
+
+`assertions/` holds 40 real crops from 20 held-out animals, 1,066 labelled
+cells, 15.5 MB — a deliberate, test-enforced exception to "image data never
+enters git" (synthetic fixtures would pass a model that fails on real slides).
+CI scores them on every push and publishes a metrics table to the Actions
+summary. `reports/figures/` and `QUALITY.md` are gitignored: they are
+regenerated on every model change and 34 MB per render has no place in history.
+
+### Human scoring (in progress, not yet run)
+
+`scoring_set.py` exports the 248 held-out sections for blind counting by three
+students plus Csilla. Per-section scale driven by measured soma diameter (a
+fixed output box is what made assertion somata 3 px wide at x0.15). Shuffled
+opaque IDs; reference counts stay in `key.csv`, which scorers must not see. 50
+sections, picked round-robin across animals, are also flagged for outlining.
+
+`ap_scoring.py` recovers AP bins from the bregma values Csilla actually used
+rather than picking a number, and scores agreement with quadratic-weighted
+kappa so an adjacent-bin miss is not treated like rostral-called-caudal.
+
+**Important:** Csilla judged AP from the image, exactly as the students will.
+So there is **no ground truth for AP** — only human judgements. Any AP model can
+at best learn human consensus, and inter-rater agreement is simultaneously the
+ceiling and the label noise. Do not describe her values as labels.
+
+### Known data problems
+
+- ~7% of manifest rows fail to load. Two causes: one corrupt `.npy`
+  (`UnpicklingError`), and images recorded as `C:/Users/iunone/Desktop/...`
+  that never reached Drive. `prepare` reports them grouped by cause.
+- `ED_timepoints_counts` on Drive marks some sections `bad` in a `curated`
+  column. These should probably be excluded from the scoring set.
+
+---
 
 ## 10. Do this next, in order
 
-1. **Run notebook 00 section 6 once** to migrate the legacy `mlruns/` history —
-   *before* any new training run, for the reason in §7.1.
-2. **Run `notebooks/01_train_cellpose_sam.ipynb`** on GPU. Confirm the run appears in
-   MLflow with `dataset_hash_train = 3cbff8f986d0efba...` and a registered
-   `models:/bluespotter-lc/1`. This is the first exercise of the SQLite store and
-   Model Registry outside a sandbox — expect to debug something.
-3. **Open a PR** and merge to `main`, then flip `BRANCH` to `'main'` in both notebooks.
-4. Then consider, roughly in value order:
-   - **Grouped leave-mice-out split** (§8) — biggest scientific win.
-   - **Real segmentation metrics**: held-out IoU / Dice / AP at IoU thresholds, per
-     mouse. Training loss alone cannot tell you if the model is good, and this is what
-     makes cross-lab comparison meaningful. Currently only losses are logged.
-   - **`notebooks/02_predict.ipynb` + `src/bluespotter/predict.py`** — inference on new
-     images producing masks + a features CSV. The user has said this is what the lab
-     will actually use day to day, far more often than training.
-   - Neuromelanin quantification and per-neuron feature extraction (LC-Seg objectives).
-   - Prefect orchestration is in the vision doc but was judged **premature** — it wants
-     a persistent worker and Colab is ephemeral. Revisit only when training moves to a
-     persistent machine and runs unattended.
-   - Wrapping Cellpose as an MLflow `pyfunc` would enable `mlflow models serve`;
-     worth it when serving moves off the hand-rolled `deploy/cloudrun` app.
+1. **Strain count.** `DHC-` vs `DBT-`/`TYR-` across the manifests. This decides
+   whether an AP model is viable and is blocking everything AP-related:
+
+   ```python
+   import csv
+   from collections import Counter
+   rows = (list(csv.DictReader(open('data/manifests/train.csv')))
+         + list(csv.DictReader(open('data/manifests/test.csv'))))
+   print(Counter(r['mouse'].split('-')[0] for r in rows))
+   ```
+
+2. **`python -m bluespotter.prepare --split train --limit 50`** — measures GiB
+   per slice. Multiply by ~28. If that exceeds runtime disk, the cache needs
+   downscaling or streaming from Drive instead.
+
+3. **`dvc repro sync-manifests`** — the last run reported
+   `Version pinned : False`, i.e. it read the live Drive CSV rather than a
+   revision in `dvc.lock`.
+
+4. **Full training run.** `LIMIT = None`, `EPOCHS = None` in notebook 01 cell 12.
+   At ~70 s/epoch for 55 images, 1,386 x 100 epochs is order of a day on an L4 —
+   check compute-unit burn and reconsider 100 epochs first.
+
+5. **`dvc repro evaluate` then `render`**, then set `quality_gate.enabled: true`
+   with thresholds a little below what was actually measured.
+
+6. **Then**: `notebooks/02_predict.ipynb` + `predict.py`. The user has said
+   inference is what the lab will use day to day, far more than training.
+
+### Open decisions that are the user's, not Claude's
+
+- **AP model viability.** Matthias requires AP training data to be transgenic
+  WT-like, excluding virally injected animals. But nearly the whole dataset is
+  `DHC-` dbh-cre mice injected with AAV. If step 1 confirms this, the options
+  are: widen "undegenerated" to include `hTyrNull`/saline controls (they express
+  no tyrosinase, so LC should be anatomically normal); use early post-injection
+  timepoints; or image the `+/+` TYR brains that exist but are not in NM_Slices.
+- **The condition table.** The manifest has no genotype or condition column, and
+  it is **not inferable from cohort folder names** — `NM_hightiter_*` only looks
+  like an overexpression cohort. Condition lives in five per-cohort Drive sheets
+  with different vocabularies (`Group` C/T, Control/Treatment, Saline/J60).
+  Crucially, `CN_sections` shows condition can differ **per hemisphere** of one
+  animal ("LC left: hTyrHA, LC right: hTyrNull"), so the key must be
+  `(mouse, side)`, not mouse. `ap_scoring.read_wt_mice()` takes this explicitly
+  and refuses to guess.
+- Csilla's manual counts already exist on Drive (`ED_all_cell_counts` has
+  `TH_Count_manual` alongside Cellpose counts; `MC chemogenetics` and
+  `high_titer_behav_cells` have `th_counts` by `id, ap, side`). She may not need
+  to recount.
+
+---
 
 ## 11. Credentials — where the token goes
 
