@@ -1,0 +1,549 @@
+{
+  "errors": [],
+  "warnings": [],
+  "leakage": {
+    "image_id_overlap": [],
+    "mouse_overlap": [],
+    "slice_overlap": []
+  },
+  "composition": {
+    "train": {
+      "n_rows": 1386,
+      "n_mice": 97,
+      "by_source": {
+        "CNO": 211,
+        "Ernesto": 43,
+        "NM_hightiter_behavior_brains": 174,
+        "NM_hightiter_histology_brains_ED": 120,
+        "NM_lowtiter_behavior_brains": 214,
+        "NM_lowtiter_histology_brains": 374,
+        "NM_tyr_titering": 227,
+        "dKi_NM": 23
+      },
+      "by_microscope": {
+        "Olympus (vsi->seg.npy)": 26,
+        "Zeiss (czi->tif)": 521,
+        "unknown": 839
+      },
+      "by_channel": {
+        "BF": 22,
+        "CH2": 23,
+        "HA": 354,
+        "PFC": 10,
+        "SN": 9,
+        "TH": 968
+      },
+      "by_mask_type": {
+        "cp_masks_png": 708,
+        "seg_npy": 678
+      }
+    },
+    "test": {
+      "n_rows": 248,
+      "n_mice": 20,
+      "by_source": {
+        "CNO": 14,
+        "Ernesto": 5,
+        "NM_hightiter_behavior_brains": 104,
+        "NM_hightiter_histology_brains_ED": 18,
+        "NM_lowtiter_behavior_brains": 21,
+        "NM_lowtiter_histology_brains": 49,
+        "NM_tyr_titering": 37
+      },
+      "by_microscope": {
+        "Olympus (vsi->seg.npy)": 7,
+        "Zeiss (czi->tif)": 159,
+        "unknown": 82
+      },
+      "by_channel": {
+        "BF": 3,
+        "HA": 44,
+        "TH": 201
+      },
+      "by_mask_type": {
+        "cp_masks_png": 75,
+        "seg_npy": 173
+      }
+    }
+  },
+  "rows_per_mouse": {
+    "DBT-0033": {
+      "train": 0,
+      "test": 9
+    },
+    "DHC-0413": {
+      "train": 13,
+      "test": 0
+    },
+    "DHC-0420": {
+      "train": 18,
+      "test": 0
+    },
+    "DHC-0421": {
+      "train": 15,
+      "test": 0
+    },
+    "DHC-0426": {
+      "train": 16,
+      "test": 0
+    },
+    "DHC-0428": {
+      "train": 27,
+      "test": 0
+    },
+    "DHC-0429": {
+      "train": 11,
+      "test": 0
+    },
+    "DHC-0433": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0434": {
+      "train": 8,
+      "test": 0
+    },
+    "DHC-0441": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0447": {
+      "train": 0,
+      "test": 16
+    },
+    "DHC-0453": {
+      "train": 31,
+      "test": 0
+    },
+    "DHC-0464": {
+      "train": 30,
+      "test": 0
+    },
+    "DHC-0477": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0479": {
+      "train": 11,
+      "test": 0
+    },
+    "DHC-0480": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0483": {
+      "train": 9,
+      "test": 0
+    },
+    "DHC-0515": {
+      "train": 20,
+      "test": 0
+    },
+    "DHC-0516": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0523": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0542": {
+      "train": 28,
+      "test": 0
+    },
+    "DHC-0547": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0554": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0564": {
+      "train": 13,
+      "test": 0
+    },
+    "DHC-0565": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0583": {
+      "train": 19,
+      "test": 0
+    },
+    "DHC-0584": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0590": {
+      "train": 0,
+      "test": 21
+    },
+    "DHC-0591": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0612": {
+      "train": 11,
+      "test": 0
+    },
+    "DHC-0629": {
+      "train": 8,
+      "test": 0
+    },
+    "DHC-0632": {
+      "train": 23,
+      "test": 0
+    },
+    "DHC-0666": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0691": {
+      "train": 23,
+      "test": 0
+    },
+    "DHC-0693": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0694": {
+      "train": 9,
+      "test": 0
+    },
+    "DHC-0695": {
+      "train": 9,
+      "test": 0
+    },
+    "DHC-0703": {
+      "train": 0,
+      "test": 25
+    },
+    "DHC-0705": {
+      "train": 0,
+      "test": 8
+    },
+    "DHC-0712": {
+      "train": 15,
+      "test": 0
+    },
+    "DHC-0713": {
+      "train": 15,
+      "test": 0
+    },
+    "DHC-0771": {
+      "train": 22,
+      "test": 0
+    },
+    "DHC-0772": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0892": {
+      "train": 13,
+      "test": 0
+    },
+    "DHC-0893": {
+      "train": 0,
+      "test": 13
+    },
+    "DHC-0913": {
+      "train": 0,
+      "test": 8
+    },
+    "DHC-0929": {
+      "train": 15,
+      "test": 0
+    },
+    "DHC-0930": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-0932": {
+      "train": 27,
+      "test": 0
+    },
+    "DHC-0934": {
+      "train": 23,
+      "test": 0
+    },
+    "DHC-0935": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-0936": {
+      "train": 9,
+      "test": 0
+    },
+    "DHC-1142": {
+      "train": 19,
+      "test": 0
+    },
+    "DHC-1143": {
+      "train": 13,
+      "test": 0
+    },
+    "DHC-1351": {
+      "train": 4,
+      "test": 0
+    },
+    "DHC-1352": {
+      "train": 0,
+      "test": 2
+    },
+    "DHC-1355": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-1607": {
+      "train": 16,
+      "test": 0
+    },
+    "DHC-1609": {
+      "train": 0,
+      "test": 11
+    },
+    "DHC-1616": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-1619": {
+      "train": 19,
+      "test": 0
+    },
+    "DHC-1621": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-1622": {
+      "train": 15,
+      "test": 0
+    },
+    "DHC-1643": {
+      "train": 0,
+      "test": 14
+    },
+    "DHC-1668": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-1670": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-1710": {
+      "train": 28,
+      "test": 0
+    },
+    "DHC-1738": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-1740": {
+      "train": 20,
+      "test": 0
+    },
+    "DHC-1741": {
+      "train": 16,
+      "test": 0
+    },
+    "DHC-1742": {
+      "train": 15,
+      "test": 0
+    },
+    "DHC-1747": {
+      "train": 16,
+      "test": 0
+    },
+    "DHC-1750": {
+      "train": 11,
+      "test": 0
+    },
+    "DHC-1751": {
+      "train": 7,
+      "test": 0
+    },
+    "DHC-1757": {
+      "train": 16,
+      "test": 0
+    },
+    "DHC-1760": {
+      "train": 16,
+      "test": 0
+    },
+    "DHC-1765": {
+      "train": 24,
+      "test": 0
+    },
+    "DHC-1789": {
+      "train": 20,
+      "test": 0
+    },
+    "DHC-1792": {
+      "train": 0,
+      "test": 10
+    },
+    "DHC-1793": {
+      "train": 18,
+      "test": 0
+    },
+    "DHC-1794": {
+      "train": 0,
+      "test": 9
+    },
+    "DHC-1797": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-1799": {
+      "train": 0,
+      "test": 21
+    },
+    "DHC-1800": {
+      "train": 0,
+      "test": 8
+    },
+    "DHC-1831": {
+      "train": 2,
+      "test": 0
+    },
+    "DHC-1858": {
+      "train": 0,
+      "test": 16
+    },
+    "DHC-1859": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-1860": {
+      "train": 24,
+      "test": 0
+    },
+    "DHC-1861": {
+      "train": 0,
+      "test": 20
+    },
+    "DHC-1863": {
+      "train": 20,
+      "test": 0
+    },
+    "DHC-1884": {
+      "train": 18,
+      "test": 0
+    },
+    "DHC-1886": {
+      "train": 0,
+      "test": 12
+    },
+    "DHC-1892": {
+      "train": 2,
+      "test": 0
+    },
+    "DHC-1893": {
+      "train": 2,
+      "test": 0
+    },
+    "DHC-1905": {
+      "train": 8,
+      "test": 0
+    },
+    "DHC-1907": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-1914": {
+      "train": 8,
+      "test": 0
+    },
+    "DHC-1918": {
+      "train": 21,
+      "test": 0
+    },
+    "DHC-1925": {
+      "train": 26,
+      "test": 0
+    },
+    "DHC-1926": {
+      "train": 0,
+      "test": 10
+    },
+    "DHC-1939": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-1940": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-1941": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-2030": {
+      "train": 14,
+      "test": 0
+    },
+    "DHC-2031": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-2032": {
+      "train": 12,
+      "test": 0
+    },
+    "DHC-2034": {
+      "train": 10,
+      "test": 0
+    },
+    "DHC-2041": {
+      "train": 0,
+      "test": 1
+    },
+    "DHC-2076": {
+      "train": 0,
+      "test": 14
+    },
+    "DHC-2092": {
+      "train": 21,
+      "test": 0
+    },
+    "DHC-2093": {
+      "train": 21,
+      "test": 0
+    },
+    "DHC-2100": {
+      "train": 5,
+      "test": 0
+    },
+    "DHC-2275": {
+      "train": 5,
+      "test": 0
+    },
+    "M1": {
+      "train": 8,
+      "test": 0
+    },
+    "M2": {
+      "train": 4,
+      "test": 0
+    },
+    "M5": {
+      "train": 7,
+      "test": 0
+    },
+    "M6": {
+      "train": 4,
+      "test": 0
+    }
+  },
+  "ap_position": {
+    "present": true,
+    "n_rows": 1443,
+    "n_mice": 106,
+    "ap_mm_min": -5.88,
+    "ap_mm_max": -4.6,
+    "n_ap_mouse_overlap": 0,
+    "errors": [],
+    "warnings": []
+  }
+}

@@ -1,6 +1,15 @@
 # --- Data & models never go in git (they live in Google Drive) ---
 data/*
 !data/.gitkeep
+# DVC pipeline metafiles must stay visible to git even under data/ — they are
+# the pointers, not the payload. The payload itself stays ignored.
+!data/**/*.dvc
+!data/**/.gitignore
+
+# --- DVC ---
+# Committed:  dvc.yaml, dvc.lock, .dvc/config, *.dvc, reports/*.json
+# Ignored:    .dvc/cache, .dvc/tmp, .dvc/config.local (handled in .dvc/.gitignore)
+/dvc.lock.bak
 *.tif
 *.tiff
 *.czi
@@ -34,3 +43,11 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# --- Local review artefacts ---
+# Rendered assertion panels and the page that embeds them. Regenerated on every
+# model change, so committing them grows history by tens of MB per iteration to
+# show something a person looks at once. The metrics CI gates on are committed:
+# reports/segmentation_metrics.json, reports/validation.json, reports/*_index_summary.json.
+reports/figures/
+reports/QUALITY.md

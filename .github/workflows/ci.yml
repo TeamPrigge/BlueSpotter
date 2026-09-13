@@ -1,0 +1,189 @@
+name: CI
+
+# What this can and cannot check.
+#
+# GitHub runners have no access to the lab's Google Drive, so CI can never see
+# the images themselves. That is fine — the point of the DVC setup is that the
+# *description* of the dataset is in git, and descriptions are exactly what CI is
+# good at checking. So we verify: the pipeline definition is well-formed, the
+# lock file is not stale, the committed data reports are internally consistent,
+# and the resolver/indexer/validator logic passes its tests against a synthetic
+# Drive tree. Anything needing real images or a GPU runs in Colab.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pytest pyyaml numpy scikit-image tifffile
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+  assertions:
+    name: Model quality assertions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pytest pyyaml numpy scikit-image tifffile
+
+      - name: Scoring logic is correct
+        # Runs for real, on the committed fixtures in assertions/. No GPU, no
+        # Drive, no model. This is what makes the gate below trustworthy: a
+        # quality check with a bug in its arithmetic is worse than none, because
+        # it gets believed.
+        run: PYTHONPATH=src python -m pytest tests/test_metrics.py tests/test_assertions.py -v
+
+      - name: Publish the quality summary
+        # The numbers and a link to the pictures, on the Actions summary page, so
+        # a reviewer does not have to clone the branch to see how the model did.
+        run: |
+          python - <<'PY' >> $GITHUB_STEP_SUMMARY
+          import json, pathlib
+          m = pathlib.Path("reports/segmentation_metrics.json")
+          if not m.exists():
+              print("### Model quality\n\n_No evaluation committed yet._")
+              raise SystemExit
+          d = json.loads(m.read_text())
+          print("### Model quality — held-out split\n")
+          print(f"Model `{d.get('model','?')}` on `{d.get('n_images','?')}` images, "
+                f"`{d.get('n_true_total','?')}` labelled cells.\n")
+          print("| IoU | precision | recall | F1 | AP |")
+          print("|---|---:|---:|---:|---:|")
+          for t in ("0.5", "0.75", "0.9"):
+              if f"precision@{t}" in d:
+                  print(f"| {t} | {d[f'precision@{t}']:.3f} | {d[f'recall@{t}']:.3f} "
+                        f"| {d[f'f1@{t}']:.3f} | {d[f'ap@{t}']:.3f} |")
+          print(f"\nCell-count bias **{d.get('count_bias_pct', 0):+.1f}%**. "
+                f"Weakest animal `{d.get('worst_mouse','?')}` "
+                f"(F1 {d.get('worst_mouse_f1@0.5', float('nan')):.3f}).\n")
+          sha = "${{ github.sha }}"
+          if pathlib.Path("reports/QUALITY.md").exists():
+              print(f"[Visual review — image / ground truth / prediction]"
+                    f"(../blob/{sha}/reports/QUALITY.md)")
+          PY
+
+      - name: Model still clears the quality bar
+        # CI cannot re-segment 248 held-out slices — no GPU, no access to the
+        # images. So it checks the numbers Colab last recorded, and refuses them
+        # if they were computed against a dataset the repo no longer pins. That
+        # staleness check is the point: it closes the gap where training code
+        # changes, nobody re-evaluates, and the build goes green on numbers
+        # describing a model that no longer exists.
+        run: |
+          PYTHONPATH=src python -m bluespotter.quality_gate --allow-missing \
+            >> $GITHUB_STEP_SUMMARY || exit 1
+
+  dvc:
+    name: DVC pipeline integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # dvc metrics diff needs history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install 'dvc>=3.50' pyyaml
+
+      - name: dvc.yaml parses and the DAG resolves
+        run: dvc dag
+
+      - name: dvc.lock covers every stage in dvc.yaml
+        # Catches the common mistake of adding or renaming a stage and committing
+        # dvc.yaml without re-running dvc repro.
+        run: |
+          python - <<'PY'
+          import sys, yaml
+          pipeline = set(yaml.safe_load(open("dvc.yaml"))["stages"])
+          try:
+              lock = set(yaml.safe_load(open("dvc.lock"))["stages"])
+          except FileNotFoundError:
+              # Bootstrapping: the pipeline has never been run on a machine with
+              # Drive mounted yet. Warn rather than block, then enforce from the
+              # first `dvc repro` onwards.
+              print("::warning title=No dvc.lock::run `dvc repro` in Colab and "
+                    "commit dvc.lock to start pinning dataset versions")
+              sys.exit(0)
+          missing = pipeline - lock
+          extra = lock - pipeline
+          if missing:
+              sys.exit(f"stale dvc.lock: never locked {sorted(missing)}. Run `dvc repro`.")
+          if extra:
+              print(f"note: dvc.lock has stages no longer in dvc.yaml: {sorted(extra)}")
+          print(f"dvc.lock covers all {len(pipeline)} stages")
+          PY
+
+      - name: Data validation report is clean
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          p = pathlib.Path("reports/validation.json")
+          if not p.exists():
+              print("::warning title=No validation report::run `dvc repro validate` "
+                    "in Colab and commit reports/validation.json")
+              sys.exit(0)
+          r = json.loads(p.read_text())
+          print(json.dumps(r, indent=2))
+          if r.get("n_errors"):
+              sys.exit(f"{r['n_errors']} manifest error(s) — see reports/validation_detail.json")
+          # Group leakage is reported loudly but does not fail the build until the
+          # split has been regrouped by animal. Flip fail_on_group_leak in
+          # params.yaml, then tighten this to a hard failure.
+          mice, slices = r.get("n_mouse_overlap", 0), r.get("n_slice_overlap", 0)
+          if mice or slices:
+              print(f"::warning title=Train/test leakage::{mice} mice and {slices} "
+                    f"slice(s) appear in both splits; held-out scores are optimistic")
+          print("validation OK")
+          PY
+
+      - name: Every indexed file was found on Drive
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          bad = []
+          for split in ("train", "test"):
+              p = pathlib.Path(f"reports/{split}_index_summary.json")
+              if not p.exists():
+                  print(f"note: {p} not committed yet, skipping")
+                  continue
+              s = json.loads(p.read_text())
+              print(f"{split}: {s['files_present']}/{s['files_indexed']} present, "
+                    f"{s['total_gib']} GiB, hash={s['dataset_hash'][:12]} "
+                    f"({s['hash_mode']})")
+              if s.get("files_missing"):
+                  bad.append(f"{split}: {s['files_missing']} missing file(s)")
+          if bad:
+              sys.exit("; ".join(bad))
+          PY
+
+      - name: Show metrics change on this PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: dvc metrics diff --md origin/${{ github.base_ref }} >> $GITHUB_STEP_SUMMARY
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check src/ tests/

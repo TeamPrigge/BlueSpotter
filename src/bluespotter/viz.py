@@ -4,11 +4,11 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from .config import Config, load_config
-from .manifest import load_manifest
+from .manifest import load_manifest  # noqa: F401  (re-exported for notebooks)
 
 
 # ---------------------------------------------------------------- LR schedule
@@ -32,10 +32,13 @@ def plot_lr(cfg: Config | None = None):
     LR = cellpose_lr_schedule(cfg.train["n_epochs"], cfg.train["learning_rate"])
     plt.figure(figsize=(7, 3.2))
     plt.plot(LR, lw=2)
-    plt.xlabel("epoch"); plt.ylabel("learning rate")
+    plt.xlabel("epoch")
+    plt.ylabel("learning rate")
     plt.title(f"Cellpose LR schedule  (n_epochs={cfg.train['n_epochs']}, "
               f"base lr={cfg.train['learning_rate']})")
-    plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
     return LR
 
 
@@ -57,6 +60,33 @@ def _latest_model(cfg: Config) -> Path:
     return max(cands, key=lambda p: p.stat().st_mtime)
 
 
+def _sample_pairs(csv_path, nm_root, n, rng):
+    """Load at most n random (image, mask) pairs from a manifest.
+
+    Deliberately does not go through load_manifest: that returns the whole
+    split, which for this dataset is far more than RAM. Unreadable rows are
+    skipped quietly here — a broken slice should cost you one panel, not the
+    figure, and load_manifest already reports them properly at training time.
+    """
+    import csv as _csv
+
+    from .manifest import load_pair
+
+    with open(csv_path, newline="") as fh:
+        rows = list(_csv.DictReader(fh))
+    rng.shuffle(rows)
+
+    pairs = []
+    for row in rows:
+        if len(pairs) >= n:
+            break
+        try:
+            pairs.append(load_pair(nm_root, row))
+        except Exception:
+            continue
+    return pairs
+
+
 def plot_predictions(cfg: Config | None = None, model=None, model_path=None,
                      n: int = 4, seed: int = 0):
     """Overlay model masks (red, dashed) on ground truth (green) for n random
@@ -72,12 +102,17 @@ def plot_predictions(cfg: Config | None = None, model=None, model_path=None,
 
     rng = random.Random(seed)
     for split, csv in [("train", cfg.train_manifest), ("test", cfg.test_manifest)]:
-        imgs, lbls = load_manifest(csv, cfg.nmslices_root)
-        idx = rng.sample(range(len(imgs)), min(n, len(imgs)))
-        fig, axes = plt.subplots(1, len(idx), figsize=(4 * len(idx), 4.2))
+        # Choose the rows FIRST, then load only those. Loading the manifest and
+        # then sampling pulled all 1,386 training slices into RAM to draw four
+        # pictures — enough to OOM the VM and take the MLflow database with it.
+        pairs = _sample_pairs(csv, cfg.nmslices_root, n, rng)
+        if not pairs:
+            print(f"  {split}: no readable pairs to plot")
+            continue
+        fig, axes = plt.subplots(1, len(pairs), figsize=(4 * len(pairs), 4.2))
         axes = np.atleast_1d(axes)
-        for ax, i in zip(axes, idx):
-            img, gt = imgs[i], np.asarray(lbls[i])
+        for ax, (img, gt) in zip(axes, pairs, strict=False):
+            gt = np.asarray(gt)
             pred = np.asarray(model.eval(img)[0])
             ax.imshow(_disp(img), cmap="gray")
             for o in outlines_list(gt):
@@ -87,4 +122,5 @@ def plot_predictions(cfg: Config | None = None, model=None, model_path=None,
             ax.set_title(f"GT={int(gt.max())}  pred={int(pred.max())}", fontsize=9)
             ax.axis("off")
         fig.suptitle(f"{split.upper()}  —  green = ground truth,  red = model", fontsize=12)
-        plt.tight_layout(); plt.show()
+        plt.tight_layout()
+        plt.show()
