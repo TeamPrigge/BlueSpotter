@@ -96,3 +96,22 @@ def test_sections_not_scored_by_everyone_are_excluded():
     a = {"LC-001": 5, "LC-002": 7}
     b = {"LC-001": 6}
     assert agreement({"a": a, "b": b})["n_sections"] == 1
+
+
+def test_the_outline_subset_is_spread_across_animals():
+    # A flat random 50-of-248 would by chance pile several sections onto a few
+    # mice, and outline agreement would then partly measure how hard that one
+    # animal is rather than how much scorers differ.
+    key = [{"scoring_id": f"LC-{i:03d}", "mouse": f"M{i % 20}"} for i in range(1, 249)]
+    from bluespotter.scoring_set import choose_label_subset
+    picked = choose_label_subset(key, 50)
+    assert len(picked) == 50
+    mice = {r["mouse"] for r in key if r["scoring_id"] in set(picked)}
+    assert len(mice) == 20                       # every animal represented
+    assert choose_label_subset(key, 50) == picked  # deterministic
+
+
+def test_asking_for_more_sections_than_exist_returns_all_of_them():
+    from bluespotter.scoring_set import choose_label_subset
+    key = [{"scoring_id": f"LC-{i:03d}", "mouse": "M1"} for i in range(1, 6)]
+    assert len(choose_label_subset(key, 50)) == 5

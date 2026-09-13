@@ -128,8 +128,43 @@ def anonymous_ids(n: int, seed: int = SEED) -> list[str]:
     return ids
 
 
+def choose_label_subset(key_rows: list[dict], n: int, seed: int = SEED) -> list[str]:
+    """Pick n sections for full ROI labelling, spread across animals.
+
+    Round-robin over mice rather than a flat random sample: a flat sample of 50
+    from 248 would, by chance, load several sections onto a few animals, and
+    then outline agreement would partly measure "how hard is this one mouse"
+    instead of how much scorers differ.
+    """
+    by_mouse: dict[str, list[str]] = {}
+    for r in key_rows:
+        by_mouse.setdefault(r["mouse"], []).append(r["scoring_id"])
+
+    rng = random.Random(seed)
+    for ids in by_mouse.values():
+        rng.shuffle(ids)
+
+    order = sorted(by_mouse)
+    rng.shuffle(order)
+
+    picked: list[str] = []
+    while len(picked) < n:
+        took = False
+        for m in order:
+            if by_mouse[m]:
+                picked.append(by_mouse[m].pop())
+                took = True
+                if len(picked) == n:
+                    break
+        if not took:
+            break            # fewer sections than requested
+    return sorted(picked)
+
+
 def build(csv_path: Path, nm_root: Path, out_dir: Path,
-          limit: int | None = None, progress_every: int = 20) -> dict:
+          limit: int | None = None, progress_every: int = 20,
+          bins=None, ap_lookup: dict[str, str] | None = None,
+          n_label: int = 50) -> dict:
     """Export one manifest as a blind counting set. Returns a report dict."""
     from skimage.io import imsave
 
@@ -173,6 +208,10 @@ def build(csv_path: Path, nm_root: Path, out_dir: Path,
                 "width": int(out.shape[1]),
                 "height": int(out.shape[0]),
                 "countable": ok,
+                # Csilla's level, from the sectioning record rather than from
+                # looking at the image. Stays in the key, never in the sheet.
+                "reference_ap_bin": (ap_lookup or {}).get(
+                    row.get("image_name", ""), "") or "",
             })
         except Exception as e:
             failures.append({"row": i, "image_name": row.get("image_name", "?"),
@@ -189,12 +228,19 @@ def build(csv_path: Path, nm_root: Path, out_dir: Path,
 
     # The sheet scorers receive: IDs only, in ID order, nothing else. Any extra
     # column is a cue -- even image size hints at which animal it came from.
+    to_label = set(choose_label_subset(key, n_label)) if n_label else set()
+
     sheet = out_dir / "scoring_sheet.csv"
     with open(sheet, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["scoring_id", "count", "confidence_1_to_5", "notes"])
+        w.writerow(["scoring_id", "count", "confidence_1_to_5",
+                    "ap_bin", "ap_confidence_1_to_5", "also_outline", "notes"])
         for r in key:
-            w.writerow([r["scoring_id"], "", "", ""])
+            w.writerow([r["scoring_id"], "", "",
+                        "", "", "yes" if r["scoring_id"] in to_label else "", ""])
+
+    (out_dir / "label_subset.csv").write_text(
+        "scoring_id\n" + "\n".join(sorted(to_label)) + "\n")
 
     key_path = out_dir / "key.csv"
     with open(key_path, "w", newline="") as fh:
@@ -213,6 +259,9 @@ def build(csv_path: Path, nm_root: Path, out_dir: Path,
         "counts_max": int(max(counts)) if counts else 0,
         "counts_median": int(np.median(counts)) if counts else 0,
         "n_flagged_hard_to_count": len(hard),
+        "n_to_outline": len(to_label),
+        "n_animals_in_outline_subset": len({r["mouse"] for r in key
+                                            if r["scoring_id"] in to_label}),
         "flagged": hard,
         "failures": failures,
         "sheet": str(sheet),
@@ -226,26 +275,118 @@ def build(csv_path: Path, nm_root: Path, out_dir: Path,
         "==========================================\n\n"
         "In `images/` there is one PNG per section, named LC-001 ... .\n"
         "Open `scoring_sheet.csv`, put YOUR NAME in the filename\n"
-        "(e.g. scoring_sheet_anna.csv), and fill in one number per row:\n"
-        "how many labelled neurons you can count in that image.\n\n"
-        "  count                 whole number of neurons you see\n"
-        "  confidence_1_to_5     5 = sure, 1 = mostly guessing\n"
-        "  notes                 anything odd (damaged section, unclear edge)\n\n"
-        "Please:\n"
-        "  - work alone, and do not compare with the others until all are done\n"
-        "  - count every section, even the difficult ones; a confidence of 1\n"
-        "    is far more useful to us than a skipped row\n"
-        "  - do not adjust brightness between images if you can avoid it\n"
-        "  - Fiji's Plugins > Analyze > Cell Counter makes this much easier\n"
-        "    once a section has more than ~30 cells\n\n"
+        "(e.g. scoring_sheet_anna.csv), and fill in one row per image.\n\n"
+        "  count                  whole number of neurons you can see\n"
+        "  confidence_1_to_5      5 = sure, 1 = mostly guessing\n"
+        "  ap_bin                 which rostrocaudal level (AP1, AP2, ...)\n"
+        "  ap_confidence_1_to_5   same scale, for the level\n"
+        "  also_outline           'yes' = please ALSO draw the cells (see below)\n"
+        "  notes                  anything odd (damaged section, unclear edge)\n\n"
+        "COUNTING\n"
+        "  Work alone. Do not compare with the others until everyone is done.\n"
+        "  Count every section, even difficult ones — a confidence of 1 is far\n"
+        "  more useful to us than a skipped row.\n"
+        "  Fiji's Plugins > Analyze > Cell Counter helps a lot past ~30 cells.\n\n"
+        "AP LEVEL\n"
+        "  Read `reference_panel/README_AP_LEVELS.txt` first. It lists the\n"
+        "  levels and shows real example sections at each one. Judge from the\n"
+        "  shape of the LC and how much fourth ventricle is visible.\n"
+        "  Pick the closest single level. If a section sits between two, choose\n"
+        "  one and mark ap_confidence low — do not write halves.\n\n"
+        "OUTLINES (only the rows marked 'yes' in also_outline)\n"
+        "  Around 50 sections are also to be drawn. Open the PNG in the\n"
+        "  Cellpose GUI, outline every neuron, and save — it writes a\n"
+        "  `<name>_seg.npy` beside the image. Put those in a folder with your\n"
+        "  name. Draw on the image as given; do not rescale it, or the outlines\n"
+        "  will not line up with anyone else's.\n\n"
         "The images are in a scrambled order and tell you nothing about which\n"
-        "animal they came from. That is deliberate — it keeps your count\n"
+        "animal they came from. That is deliberate — it keeps your judgement\n"
         "independent, which is the entire point of the exercise.\n\n"
         "There is no right answer we are checking you against. We are measuring\n"
-        "how much counts differ between people, so your honest count is the\n"
+        "how much scores differ between people, so your honest score is the\n"
         "useful one.\n"
     )
     return report
+
+
+
+def build_reference_panel(ap_rows, nm_root: Path, out_dir: Path, bins,
+                          n_per_bin: int = 2, seed: int = SEED) -> dict:
+    """Example sections at each AP level, for scorers to calibrate against.
+
+    Built from Csilla's own already-levelled sections rather than an atlas
+    drawing, so students compare like with like: same stain, same scanner, same
+    noise. The atlas plate answers "what is at -5.2 mm"; these answer "what does
+    -5.2 mm look like in our material", and the second is the one that makes
+    two scorers agree.
+
+    Caller supplies WT-only rows. Nothing here filters on genotype, because
+    nothing here can — see ap_scoring for why that is not inferred.
+    """
+    from skimage.io import imsave
+
+    from .ap_scoring import assign_bin
+    from .manifest import load_pair
+
+    panel_dir = out_dir / "reference_panel"
+    panel_dir.mkdir(parents=True, exist_ok=True)
+
+    by_bin: dict[str, list[dict]] = {}
+    for r in ap_rows:
+        label = assign_bin(r.get("_ap"), bins)
+        if label:
+            by_bin.setdefault(label, []).append(r)
+
+    rng = random.Random(seed)
+    written, missing = [], []
+    for b in bins:
+        candidates = by_bin.get(b.label, [])
+        if not candidates:
+            missing.append(b.label)
+            continue
+        rng.shuffle(candidates)
+        taken = 0
+        for row in candidates:
+            if taken >= n_per_bin:
+                break
+            try:
+                image, mask = load_pair(nm_root, row)
+                scale, _ = choose_scale(mask)
+                img8 = to_uint8(downscale(np.asarray(image), scale))
+                name = f"{b.label}_{b.centre_mm:+.2f}mm_example{taken + 1}.png"
+                imsave(str(panel_dir / name), img8, check_contrast=False)
+                written.append({"bin": b.label, "centre_mm": b.centre_mm,
+                                "file": name, "mouse": row.get("mouse", "?"),
+                                "image_name": row.get("image_name", "?")})
+                taken += 1
+            except Exception:
+                continue          # a bad example is not worth failing the panel
+            finally:
+                gc.collect()
+        if taken == 0:
+            missing.append(b.label)
+
+    lines = ["AP REFERENCE PANEL", "==================", "",
+             "Example sections at each level, from already-levelled material in",
+             "this dataset. Compare the shape of the LC and how much fourth",
+             "ventricle is visible.", "",
+             "Levels, rostral to caudal:", ""]
+    for b in bins:
+        got = [w for w in written if w["bin"] == b.label]
+        lines.append(f"  {b.label}   {b.centre_mm:+.2f} mm from bregma   "
+                     f"({len(got)} example(s), {b.n_sections} sections at this level)")
+    lines += ["",
+              "Also consult the Paxinos plates on the shared Drive, or the Allen",
+              "Mouse Brain Atlas, for the corresponding coronal level.", "",
+              "Record the closest level in the ap_bin column as AP1, AP2, ... .",
+              "If a section falls between two, pick one and mark ap_confidence low;",
+              "do not write halves.", ""]
+    if missing:
+        lines += [f"NOTE: no example available for {', '.join(missing)}.", ""]
+    (panel_dir / "README_AP_LEVELS.txt").write_text("\n".join(lines))
+
+    return {"n_written": len(written), "bins_without_examples": missing,
+            "examples": written}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -255,6 +396,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", default=None,
                     help="default: <drive_root>/scoring_set/<split>")
+    ap.add_argument("--n-label", type=int, default=50,
+                    help="how many sections to also ask for outlines on (0 = none)")
+    ap.add_argument("--wt-mice", default=None,
+                    help="CSV with columns mouse,condition. REQUIRED for the AP "
+                         "reference panel: degeneration alters LC outline, and "
+                         "genotype is not inferable from the manifest.")
     args = ap.parse_args(argv)
 
     from .config import load_config
@@ -263,9 +410,43 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path(args.out) if args.out else \
         cfg.drive_root / "scoring_set" / args.split
 
+    # AP levels come from the values Csilla actually used, not from a number
+    # chosen here.
+    from .ap_scoring import assign_bin, derive_bins, read_ap_manifest, read_wt_mice
+
+    wt_mice = read_wt_mice(Path(args.wt_mice)) if args.wt_mice else None
+    ap_path = cfg.repo_root / cfg.data["ap_manifest"]
+    if not ap_path.exists():
+        ap_path = Path(cfg.drive_root) / cfg.data["ap_manifest"]
+
+    bins, ap_lookup = [], {}
+    if ap_path.exists():
+        ap_rows = read_ap_manifest(ap_path, wt_mice=wt_mice)
+        bins = derive_bins(r["_ap"] for r in ap_rows)
+        ap_lookup = {r["image_name"]: assign_bin(r["_ap"], bins) for r in ap_rows}
+        print(f"[scoring_set] {len(bins)} AP level(s) recovered from "
+              f"{len(ap_rows)} levelled section(s)"
+              + (f" (WT only: {len(wt_mice)} animals)" if wt_mice else ""))
+        for b in bins:
+            print(f"               {b.describe()}")
+    else:
+        print(f"[scoring_set] no AP manifest at {ap_path} — no AP column")
+
     print(f"[scoring_set] {cfg.manifest_for(args.split)} -> {out_dir}")
     r = build(cfg.manifest_for(args.split), cfg.nmslices_root, out_dir,
-              limit=args.limit)
+              limit=args.limit, bins=bins, ap_lookup=ap_lookup,
+              n_label=args.n_label)
+
+    if bins and wt_mice:
+        panel = build_reference_panel(ap_rows, cfg.nmslices_root, out_dir, bins)
+        print(f"[scoring_set] reference panel: {panel['n_written']} example(s)")
+        if panel["bins_without_examples"]:
+            print(f"               no example for: "
+                  f"{', '.join(panel['bins_without_examples'])}")
+    elif bins:
+        print("[scoring_set] reference panel SKIPPED — pass --wt-mice. "
+              "Degeneration alters LC shape, so non-WT examples would teach "
+              "scorers the wrong thing.")
 
     print(f"[scoring_set] {r['n_exported']} sections from {r['n_animals']} animals, "
           f"{r['reference_total_cells']} reference cells "
@@ -276,8 +457,12 @@ def main(argv: list[str] | None = None) -> int:
     if r["n_flagged_hard_to_count"]:
         print(f"[scoring_set] {r['n_flagged_hard_to_count']} section(s) could not "
               f"reach {MIN_SOMA_PX}px somata — flagged 'countable=False' in key.csv")
+    if r.get("n_to_outline"):
+        print(f"[scoring_set] {r['n_to_outline']} section(s) also flagged for "
+              f"outlining, across {r['n_animals_in_outline_subset']} animals "
+              f"(label_subset.csv)")
     print(f"[scoring_set] give scorers: {out_dir / 'images'}, "
-          f"{Path(r['sheet']).name}, README_FOR_SCORERS.txt")
+          f"{Path(r['sheet']).name}, README_FOR_SCORERS.txt, reference_panel/")
     print(f"[scoring_set] KEEP BACK: {Path(r['key']).name} (has the reference counts)")
     return 0
 
