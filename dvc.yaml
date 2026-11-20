@@ -1,0 +1,242 @@
+# BlueSpotter DVC pipeline
+#
+# The data itself never enters this repo — the images live in Google Drive and
+# always will. What DVC tracks here is the *description* of the dataset: which
+# files are in which split, and what those files contained at the moment of the
+# run. Those descriptions are small, so git holds them comfortably, and they are
+# enough to make a training run reproducible and auditable.
+#
+# Reproduce everything:      dvc repro
+# Just the data checks:      dvc repro validate index-train index-test
+# See what changed:          dvc status  /  dvc metrics diff  /  dvc params diff
+#
+# `always_changed: true` on the Drive-facing stages is deliberate: Drive can
+# change at any moment without anything in git changing, so those stages must
+# re-check on every run. Downstream stages still only re-run when the resulting
+# index actually differs.
+
+stages:
+
+  # 0. Regenerate the manifests from what is actually on Drive.
+  #    The manifests used to be typed by hand, which capped the training set at
+  #    whatever someone had transcribed while several hundred labelled slices sat
+  #    unreferenced in cohort folders. This stage walks the mount, reads mouse /
+  #    channel / hemisphere / bregma coordinate out of the file names, and writes
+  #    train.csv, test.csv and ap_position.csv. It needs the Drive mount, so it is
+  #    gated on dvc.discover and skipped elsewhere (including CI).
+  discover:
+    cmd: PYTHONPATH=src python -m bluespotter.discover
+    deps:
+      - src/bluespotter/discover.py
+      - src/bluespotter/naming.py
+    params:
+      - dvc.discover
+      - data.nmslices_root
+      - data.test_split
+    outs:
+      - reports/discovery.json:
+          cache: false
+    always_changed: true
+    desc: Walk the Drive mount and regenerate train/test/ap_position manifests.
+
+  # 1. Pull the manifests you author on Drive into the repo, where DVC hashes them.
+  sync-manifests:
+    cmd: PYTHONPATH=src python -m bluespotter.manifest_sync
+    deps:
+      - src/bluespotter/manifest_sync.py
+      # Not used by the code — this is purely an ordering edge. `discover` writes
+      # to Drive, which DVC cannot see, so without naming its report here DVC has
+      # no reason to run discovery before we snapshot the result of it.
+      - reports/discovery.json
+    params:
+      - dvc.manifest_dir
+      - drive.root
+      - data.ap_manifest
+    outs:
+      - data/manifests/train.csv
+      - data/manifests/test.csv
+      - data/manifests/ap_position.csv
+      - reports/manifest_source.json:
+          cache: false
+    always_changed: true
+    desc: Snapshot train.csv / test.csv / ap_position.csv from Drive into data/manifests/.
+
+  # 2. Structural checks: schema, duplicates, split overlap, group leakage.
+  validate:
+    cmd: PYTHONPATH=src python -m bluespotter.validate
+    deps:
+      - data/manifests/train.csv
+      - data/manifests/test.csv
+      - data/manifests/ap_position.csv
+      - src/bluespotter/validate.py
+    params:
+      - dvc.fail_on_group_leak
+    metrics:
+      # Scalars only — `dvc metrics show` flattens nested JSON, so the per-mouse
+      # breakdown lives in validation_detail.json (an output, not a metric).
+      - reports/validation.json:
+          cache: false
+    outs:
+      - reports/validation_detail.json:
+          cache: false
+    desc: Validate manifest schema and check for train/test contamination.
+
+  # 3+4. Content-index every Drive file the manifests point at. This is what turns
+  #      "a list of links" into a versioned dataset: the index carries per-file
+  #      size/mtime/hash, so its own hash in dvc.lock pins the exact bytes used.
+  index-train:
+    cmd: PYTHONPATH=src python -m bluespotter.drive_index --split train
+    deps:
+      - data/manifests/train.csv
+      - src/bluespotter/drive_index.py
+      - src/bluespotter/manifest.py
+    params:
+      - dvc.hash_mode
+      - dvc.fail_on_missing
+      - data.nmslices_root
+    outs:
+      - data/index/train_index.csv
+    metrics:
+      - reports/train_index_summary.json:
+          cache: false
+    always_changed: true
+    desc: Hash the Drive files referenced by the train split.
+
+  index-test:
+    cmd: PYTHONPATH=src python -m bluespotter.drive_index --split test
+    deps:
+      - data/manifests/test.csv
+      - src/bluespotter/drive_index.py
+      - src/bluespotter/manifest.py
+    params:
+      - dvc.hash_mode
+      - dvc.fail_on_missing
+      - data.nmslices_root
+    outs:
+      - data/index/test_index.csv
+    metrics:
+      - reports/test_index_summary.json:
+          cache: false
+    always_changed: true
+    desc: Hash the Drive files referenced by the test split.
+
+  # 4b. Same treatment for the AP subset. It is a *view* over files that are also
+  #     in the train/test indexes, but it gets its own index so the AP dataset can
+  #     be pinned, diffed and cited independently of the segmentation dataset —
+  #     the shape->AP model will be trained and published on its own schedule.
+  index-ap:
+    cmd: PYTHONPATH=src python -m bluespotter.drive_index --split ap_position
+    deps:
+      - data/manifests/ap_position.csv
+      - src/bluespotter/drive_index.py
+      - src/bluespotter/manifest.py
+    params:
+      - dvc.hash_mode
+      - dvc.fail_on_missing
+      - data.nmslices_root
+    outs:
+      - data/index/ap_position_index.csv
+    metrics:
+      - reports/ap_position_index_summary.json:
+          cache: false
+    always_changed: true
+    desc: Hash the Drive files referenced by the AP-position manifest.
+
+  # 5. Fine-tune Cellpose-SAM. Needs a GPU — run this one in Colab, not in CI.
+  #    Depends on the *indexes*, so a changed image on Drive correctly invalidates
+  #    the trained model even though no manifest row moved.
+  train:
+    cmd: PYTHONPATH=src python -m bluespotter.train
+    deps:
+      - data/index/train_index.csv
+      - data/index/test_index.csv
+      - data/manifests/train.csv
+      - data/manifests/test.csv
+      - src/bluespotter/train.py
+      - src/bluespotter/manifest.py
+      - src/bluespotter/mlflow_utils.py
+    params:
+      - model
+      - train
+      - mlflow.experiment_name
+    metrics:
+      - reports/train_metrics.json:
+          cache: false
+    plots:
+      - reports/loss_curve.csv:
+          cache: false
+    desc: Fine-tune Cellpose-SAM; logs to MLflow and writes metrics for DVC.
+
+  # 6. Score the trained model on the held-out split.
+  #    Training loss says the optimiser works. This says whether the model is any
+  #    good — precision, recall and cell-count bias against human-drawn masks,
+  #    broken down per animal so a single mean cannot hide one failing cohort.
+  #    Needs a GPU, so it runs in Colab alongside `train`.
+  evaluate:
+    cmd: PYTHONPATH=src python -m bluespotter.evaluate --split test
+    deps:
+      - data/manifests/test.csv
+      - data/index/test_index.csv
+      - src/bluespotter/evaluate.py
+      - src/bluespotter/metrics.py
+      - src/bluespotter/manifest.py
+      - reports/train_metrics.json
+    params:
+      - model.name
+    metrics:
+      - reports/segmentation_metrics.json:
+          cache: false
+    outs:
+      - reports/segmentation_detail.json:
+          cache: false
+    plots:
+      - reports/pr_curve.csv:
+          cache: false
+    desc: Segment the held-out split and score precision/recall/AP against truth.
+
+  # 7. Render the assertion crops with their ground-truth and predicted outlines.
+  #    F1 = 0.83 does not say *how* the model is wrong, and fusing touching somata
+  #    versus inventing cells in background cost the same F1 while needing
+  #    opposite fixes. reports/QUALITY.md renders on GitHub, so a pull request
+  #    shows what changed, not merely that something did.
+  render:
+    cmd: PYTHONPATH=src python -m bluespotter.render
+    deps:
+      - assertions/expected.json
+      - src/bluespotter/render.py
+      - src/bluespotter/metrics.py
+      - reports/segmentation_metrics.json
+    outs:
+      - reports/QUALITY.md:
+          cache: false
+      - reports/figures:
+          cache: false
+    desc: Render image / ground-truth / prediction panels for visual review.
+
+# Plot definitions live at the top level because a single plot draws two columns
+# (train vs test loss) from one CSV, which the inline stage form cannot express.
+# View with:  dvc plots show    /  compare revisions with:  dvc plots diff
+plots:
+  - loss:
+      template: linear
+      x: epoch
+      y:
+        reports/loss_curve.csv:
+          - train_loss
+          - test_loss
+      title: Cellpose-SAM fine-tuning loss
+
+  # Precision and recall against the IoU threshold. This is the honest curve for
+  # instance segmentation — ROC would need true negatives, and in a task whose
+  # negative class is "every region that is not a cell" the false-positive rate
+  # is meaningless. The slope here answers a real question: are the outlines
+  # good, or merely in the right place?
+  - segmentation_quality:
+      template: linear
+      x: iou_threshold
+      y:
+        reports/pr_curve.csv:
+          - precision
+          - recall
+          - f1
+      title: Held-out precision / recall vs IoU threshold

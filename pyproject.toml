@@ -1,0 +1,50 @@
+# Packaging + tooling configuration for BlueSpotter.
+
+# Making this an installable package is not ceremony: `python -m bluespotter.x` in a
+# notebook runs a *subprocess*, and a subprocess does not inherit sys.path edits made
+# in the kernel. `pip install -e .` puts the package on the path for every process,
+# which is what the DVC stages and the notebook shell cells need.
+#
+# Runtime dependencies deliberately live in requirements.txt rather than here, so an
+# editable install stays instant and does not try to resolve cellpose/torch.
+[project]
+name = "bluespotter"
+version = "0.1.0"
+description = "Locus coeruleus-optimised neuronal segmentation built on Cellpose-SAM"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"   # keep the code runnable on older Colab images
+extend-exclude = ["notebooks", "landing", "deploy", "docs"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "B",    # bugbear: likely bugs
+    "UP",   # pyupgrade
+    "SIM",  # simplifications
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E741",  # ambiguous names like `l` — common and readable in array code
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately build fixture rows from compact whitespace-separated strings.
+"tests/*" = ["SIM905"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

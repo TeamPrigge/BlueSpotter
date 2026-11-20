@@ -1,0 +1,18 @@
+# Patterns DVC should not walk. Keeping this tight matters here: without it DVC
+# would try to traverse the whole Drive-synced tree and the Colab scratch dir.
+# Learn more at https://dvc.org/doc/user-guide/dvcignore
+
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.pytest_cache/
+
+# MLflow writes constantly during training; it is tracked by MLflow, not DVC.
+mlruns/
+mlartifacts/
+
+# Local scratch / caches
+*.tmp
+.DS_Store

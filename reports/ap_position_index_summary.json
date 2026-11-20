@@ -1,0 +1,12 @@
+{
+  "manifest": "ap_position.csv",
+  "rows": 1443,
+  "files_indexed": 2095,
+  "files_present": 2095,
+  "files_missing": 0,
+  "total_bytes": 245993778125,
+  "total_gib": 229.1,
+  "hash_mode": "partial",
+  "dataset_hash": "a7e8072c259127154b9669b413d33a04",
+  "missing_examples": []
+}

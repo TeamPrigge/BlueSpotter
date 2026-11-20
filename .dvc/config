@@ -1,0 +1,26 @@
+# BlueSpotter DVC configuration (committed to git — shared by everyone).
+#
+# The remote is a plain directory remote pointing at the *mounted* Drive path,
+# not DVC's `gdrive://` backend. That is deliberate: the gdrive backend needs its
+# own Google Cloud OAuth client per user since DVC retired its shared client ID,
+# which is a lot of setup for no benefit here. Colab already mounts Drive as a
+# filesystem, and Drive for Desktop does the same on a laptop, so DVC can just
+# write files. No tokens, no service accounts, nothing to leak.
+#
+# Machine-specific paths belong in .dvc/config.local (gitignored). On a Mac with
+# Drive for Desktop, for example:
+#   dvc remote modify --local drivestore url \
+#     "$HOME/Library/CloudStorage/GoogleDrive-<you>/My Drive/TeamPrigge/SoftwareTools/BlueSpotter/dvcstore"
+[core]
+    remote = drivestore
+    # Stage .dvc / dvc.lock changes into git automatically after dvc repro.
+    autostage = true
+    # Opt out of DVC's anonymous usage analytics (lab default; remove to re-enable).
+    analytics = false
+[cache]
+    # Drive mounts do not support reflink/hardlink/symlink — copy is the only
+    # option that behaves correctly there.
+    type = copy
+# Default: the Drive path as seen from Colab after drive.mount('/content/drive').
+['remote "drivestore"']
+    url = /content/drive/MyDrive/TeamPrigge/SoftwareTools/BlueSpotter/dvcstore

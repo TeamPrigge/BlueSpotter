@@ -1,0 +1,5 @@
+outs:
+- md5: 8600e6264f8015f3b150977286ba238b
+  size: 65666
+  hash: md5
+  path: students_r2_manifest.csv
