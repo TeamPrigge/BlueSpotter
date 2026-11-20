@@ -1,0 +1,39 @@
+{
+  "run_name": "bluespotter_lc_students_r2_20261119_212344",
+  "mlflow_run_id": "fa7087e082c64194bc45ef98355a9e6d",
+  "mlflow_experiment": "bluespotter-lc-segmentation",
+  "trained_through_pipeline": false,
+  "base_model": "bluespotter_lc_20260730_140712",
+  "dataset": {
+    "manifest": "data/students_r2/students_r2_manifest.csv",
+    "manifest_md5": "8600e6264f8015f3b150977286ba238b",
+    "annotation_files": "data/students_r2/students_r2_annotation_files.csv",
+    "annotation_files_md5": "e7504b983ea59e04f90c054613025ad8",
+    "dataset_hash": "8c4cdaab4ddd1d5ec86892f909284353",
+    "n_images": 181,
+    "n_train": 154,
+    "n_test": 27,
+    "n_cells": 12987,
+    "image_bytes_gb": 5.87,
+    "grouped_split": false
+  },
+  "train": {
+    "n_epochs": 100,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.1,
+    "batch_size": 1,
+    "bsize": 256,
+    "target_cell_diameter_px": 45,
+    "cellpose_version": "4.2.1.1",
+    "gpu": "Tesla T4",
+    "minutes": 258,
+    "final_train_loss": 0.1705,
+    "last_test_loss": 0.2243
+  },
+  "heldout_iou_0.5": {
+    "true_cells": 1750,
+    "new_model": {"AP50": 0.653, "AP75": 0.377, "found": 1172, "extra": 248, "missed": 578},
+    "baseline_20260730": {"AP50": 0.605, "AP75": 0.276, "found": 1144, "extra": 365, "missed": 606},
+    "student_vs_student_recall": 0.522
+  }
+}
